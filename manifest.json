@@ -1,0 +1,35 @@
+{
+  "manifest_version": 3,
+  "name": "B站素材收集助手",
+  "version": "1.0.0",
+  "description": "快速收集B站视频素材，建立本地素材库",
+  "permissions": [
+    "storage",
+    "downloads",
+    "activeTab",
+    "cookies"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://www.bilibili.com/*"],
+      "js": ["content/storage.js", "content/api.js", "content/editor.js", "content/ui.js", "content/content.js"],
+      "css": ["styles/panel.css", "styles/editor.css"],
+      "run_at": "document_start"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["content/injected.js"],
+      "matches": ["https://www.bilibili.com/*"]
+    }
+  ],
+  "action": {
+    "default_title": "B站素材助手"
+  }
+}
