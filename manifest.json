@@ -18,7 +18,24 @@
   "content_scripts": [
     {
       "matches": ["https://www.bilibili.com/*"],
-      "js": ["content/storage.js", "content/api.js", "content/editor.js", "content/ui.js", "content/content.js"],
+      "js": [
+        "content/storage.js",
+        "content/api.js",
+        "content/editor/state.js",
+        "content/editor/timeline.js",
+        "content/editor/subtitle.js",
+        "content/editor/media.js",
+        "content/editor/player.js",
+        "content/editor/compositor.js",
+        "content/editor/pip-interaction.js",
+        "content/editor/export.js",
+        "content/editor/draft.js",
+        "content/editor/ui.js",
+        "content/editor/events.js",
+        "content/editor/index.js",
+        "content/ui.js",
+        "content/content.js"
+      ],
       "css": ["styles/panel.css", "styles/editor.css"],
       "run_at": "document_start"
     }

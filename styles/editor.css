@@ -184,6 +184,8 @@
 .bm-player-wrapper iframe {
   width: 100%;
   height: 100%;
+  position: relative;
+  z-index: 1;
 }
 
 /* 字幕显示 */
@@ -398,12 +400,14 @@
 
 /* 底部时间轴 */
 .bm-editor-timeline {
-  height: 200px;
-  min-height: 200px;
+  height: auto;
+  min-height: 180px;
+  max-height: 45vh;
   background: #252525;
   border-top: 1px solid #333;
   display: flex;
   flex-direction: column;
+  flex-shrink: 0;
 }
 
 .bm-timeline-header {
@@ -474,13 +478,24 @@
   display: flex;
   flex-direction: column;
   position: relative;
+  overflow-y: auto;
+  overflow-x: hidden;
+  max-height: calc(45vh - 80px);
+}
+
+/* 视频轨道容器 */
+.bm-video-tracks-container {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
 }
 
 .bm-timeline-track {
   display: flex;
-  flex: 1;
+  height: 40px;
   min-height: 40px;
   border-bottom: 1px solid #333;
+  flex-shrink: 0;
 }
 
 .bm-track-header {
@@ -508,20 +523,31 @@
   height: 100%;
   background: #ff4757;
   z-index: 100;
-  pointer-events: none;
-  transition: left 0.05s linear;
+  pointer-events: auto;
+  cursor: ew-resize;
 }
 
+/* 播放头顶部三角形 - 可拖动区域 */
 .bm-playhead::before {
   content: '';
   position: absolute;
   top: 0;
-  left: -5px;
-  width: 0;
-  height: 0;
-  border-left: 6px solid transparent;
-  border-right: 6px solid transparent;
-  border-top: 8px solid #ff4757;
+  left: -7px;
+  width: 16px;
+  height: 16px;
+  background: #ff4757;
+  border-radius: 2px 2px 50% 50%;
+  cursor: ew-resize;
+}
+
+/* 播放头悬停效果 */
+.bm-playhead:hover {
+  background: #ff6b7a;
+}
+
+.bm-playhead:hover::before {
+  background: #ff6b7a;
+  transform: scale(1.1);
 }
 
 /* 轨道区域可点击样式 */
@@ -544,42 +570,33 @@
   cursor: pointer;
   display: flex;
   flex-direction: column;
+  justify-content: space-between;
+  min-width: 20px;
+  border: 1px solid rgba(0, 0, 0, 0.3);
+  /* 重叠时显示阴影效果 */
+  box-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
 }
 
 .bm-timeline-clip:hover {
-  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.3);
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.6), 2px 2px 8px rgba(0, 0, 0, 0.4);
+  z-index: 10;
 }
 
 .bm-timeline-clip.selected {
-  box-shadow: 0 0 0 2px #fb7299, 0 0 12px rgba(251, 114, 153, 0.4);
+  box-shadow: 0 0 0 2px #fff, 0 0 12px rgba(255, 255, 255, 0.6);
+  z-index: 20;
 }
 
-/* 视频轨道 - 帧预览 */
-.bm-clip-frames {
-  flex: 1;
-  display: flex;
-  gap: 1px;
-  padding: 2px;
-  overflow: hidden;
+/* 画中画轨道的片段样式 - 稍微透明，表示是叠加层 */
+.bm-timeline-clip.bm-pip-clip {
+  opacity: 0.9;
+  border: 1px dashed rgba(255, 255, 255, 0.5);
 }
 
-.bm-frame-block {
-  flex: 1;
-  min-width: 4px;
-  border-radius: 2px;
-}
-
+/* 片段标题 - 隐藏 */
+.bm-clip-video-title,
 .bm-clip-time-range {
-  display: flex;
-  justify-content: space-between;
-  padding: 2px 6px;
-  font-size: 9px;
-  color: rgba(255, 255, 255, 0.9);
-  background: rgba(0, 0, 0, 0.3);
-}
-
-.bm-clip-time-range span:nth-child(2) {
-  opacity: 0.5;
+  display: none;
 }
 
 /* 音频轨道 - 波形 */
@@ -689,28 +706,51 @@
 
 .bm-ruler-mark {
   position: absolute;
-  top: 0;
+  bottom: 0;
   height: 100%;
-  border-left: 1px solid #444;
 }
 
-.bm-ruler-mark::after {
+/* 小刻度 - 1秒，最短 */
+.bm-ruler-mark.minor::after {
   content: '';
   position: absolute;
   bottom: 0;
-  left: -1px;
+  left: 0;
   width: 1px;
-  height: 6px;
-  background: #fb7299;
+  height: 4px;
+  background: #555;
+}
+
+/* 中刻度 - 5秒，中等 */
+.bm-ruler-mark.medium::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 1px;
+  height: 8px;
+  background: #777;
+}
+
+/* 大刻度 - 10秒，最长，显示数字 */
+.bm-ruler-mark.major::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 1px;
+  height: 14px;
+  background: #999;
 }
 
 .bm-ruler-mark span {
   position: absolute;
-  top: 4px;
-  left: 4px;
-  font-size: 9px;
+  top: 2px;
+  left: 3px;
+  font-size: 10px;
   color: #aaa;
   font-family: monospace;
+  white-space: nowrap;
 }
 
 /* 编辑器内的按钮样式覆盖 */
@@ -1242,4 +1282,820 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+
+/* ========== 拖拽功能样式 ========== */
+
+/* 拖拽中的片段 */
+.bm-timeline-clip.dragging {
+  opacity: 0.5;
+  cursor: grabbing;
+}
+
+/* 拖拽悬停的轨道 */
+.bm-track-content.drag-over {
+  background: rgba(251, 114, 153, 0.1);
+  box-shadow: inset 0 0 0 2px rgba(251, 114, 153, 0.5);
+}
+
+/* 片段拖拽手柄 */
+.bm-clip-drag-handle {
+  position: absolute;
+  top: 0;
+  width: 8px;
+  height: 100%;
+  cursor: ew-resize;
+  opacity: 0;
+  transition: opacity 0.2s;
+  z-index: 10;
+}
+
+.bm-timeline-clip:hover .bm-clip-drag-handle {
+  opacity: 1;
+}
+
+.bm-clip-handle-left {
+  left: 0;
+  background: linear-gradient(90deg, rgba(255,255,255,0.5), transparent);
+  border-radius: 4px 0 0 4px;
+}
+
+.bm-clip-handle-right {
+  right: 0;
+  background: linear-gradient(-90deg, rgba(255,255,255,0.5), transparent);
+  border-radius: 0 4px 4px 0;
+}
+
+/* 可拖拽片段的光标 */
+.bm-timeline-clip[draggable="true"] {
+  cursor: grab;
+}
+
+.bm-timeline-clip[draggable="true"]:active {
+  cursor: grabbing;
+}
+
+/* ========== 画中画轨道样式 ========== */
+
+/* 画中画轨道 */
+.bm-pip-track {
+  background: rgba(52, 152, 219, 0.05);
+}
+
+.bm-pip-track .bm-track-header {
+  background: #1a3a5c;
+  color: #5dade2;
+}
+
+/* 画中画片段 - 保持原有颜色，只添加边框样式 */
+.bm-pip-clip {
+  border: 2px dashed rgba(255, 255, 255, 0.4);
+}
+
+.bm-pip-clip:hover {
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.4);
+}
+
+.bm-pip-clip.selected {
+  box-shadow: 0 0 0 2px #fff, 0 0 12px rgba(255, 255, 255, 0.4);
+}
+
+/* 画中画预览区域（视频叠加层） */
+.bm-pip-preview {
+  position: absolute;
+  bottom: 10px;
+  right: 10px;
+  width: 30%;
+  aspect-ratio: 16/9;
+  background: #000;
+  border: 2px solid #3498db;
+  border-radius: 4px;
+  overflow: hidden;
+  z-index: 20;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+}
+
+.bm-pip-preview video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.bm-pip-preview .bm-pip-controls {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: flex;
+  gap: 4px;
+}
+
+.bm-pip-preview .bm-pip-btn {
+  width: 20px;
+  height: 20px;
+  background: rgba(0, 0, 0, 0.6);
+  border: none;
+  border-radius: 2px;
+  color: #fff;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.bm-pip-preview .bm-pip-btn:hover {
+  background: rgba(0, 0, 0, 0.8);
+}
+
+/* 拖拽时的占位符 */
+.bm-drop-indicator {
+  position: absolute;
+  top: 0;
+  width: 2px;
+  height: 100%;
+  background: #fb7299;
+  pointer-events: none;
+  z-index: 100;
+}
+
+/* 轨道空状态提示 */
+.bm-track-content:empty::after {
+  content: '拖拽片段到此处';
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: #666;
+  font-size: 11px;
+}
+
+.bm-pip-track .bm-track-content:empty::after {
+  content: '拖拽片段到此处添加画中画';
+}
+
+/* 多轨道时的轨道分隔线 */
+.bm-timeline-track + .bm-timeline-track {
+  border-top: 1px solid #444;
+}
+
+/* 轨道高度调整 */
+.bm-timeline-track {
+  height: 40px;
+  min-height: 40px;
+}
+
+.bm-overlay-track {
+  height: 36px;
+  min-height: 36px;
+}
+
+
+/* ========== 素材按钮组样式 ========== */
+
+.bm-material-btns {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.bm-material-btns .bm-btn-icon {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  font-size: 12px;
+}
+
+.bm-add-to-pip {
+  background: #3498db !important;
+}
+
+.bm-add-to-pip:hover {
+  background: #2980b9 !important;
+}
+
+.bm-add-search-to-pip {
+  background: #3498db !important;
+}
+
+.bm-add-search-to-pip:hover {
+  background: #2980b9 !important;
+}
+
+
+/* ========== 动态轨道样式 ========== */
+
+/* 视频轨道容器 */
+.bm-video-tracks-container {
+  display: flex;
+  flex-direction: column;
+}
+
+/* 叠加轨道（非主轨道） */
+.bm-overlay-track {
+  background: rgba(52, 152, 219, 0.05);
+}
+
+.bm-overlay-track .bm-track-header {
+  background: #1a3a5c;
+  color: #5dade2;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+/* 轨道删除按钮 */
+.bm-track-remove-btn {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  color: #888;
+  font-size: 14px;
+  cursor: pointer;
+  border-radius: 2px;
+  line-height: 1;
+}
+
+.bm-track-remove-btn:hover {
+  background: rgba(231, 76, 60, 0.3);
+  color: #e74c3c;
+}
+
+/* 叠加轨道的片段样式 - 保持原有颜色，只添加边框 */
+.bm-overlay-track .bm-timeline-clip {
+  border: 1px dashed rgba(255, 255, 255, 0.4);
+}
+
+.bm-overlay-track .bm-timeline-clip:hover {
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.4);
+}
+
+.bm-overlay-track .bm-timeline-clip.selected {
+  box-shadow: 0 0 0 2px #fff, 0 0 12px rgba(255, 255, 255, 0.4);
+}
+
+/* 添加轨道按钮样式 */
+#bm-add-track-btn {
+  background: #27ae60;
+}
+
+#bm-add-track-btn:hover {
+  background: #2ecc71;
+}
+
+/* 轨道空状态 - 更新 */
+.bm-overlay-track .bm-track-content:empty::after {
+  content: '拖拽片段到此处叠加显示';
+}
+
+
+/* ========== 画中画视频样式 ========== */
+
+.bm-pip-video-container {
+  position: absolute;
+  z-index: 20;
+  border: 2px solid rgba(52, 152, 219, 0.8);
+  border-radius: 6px;
+  overflow: hidden;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+  background: #000;
+  display: none;
+  transition: opacity 0.2s ease;
+}
+
+.bm-pip-video-container video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+/* 画中画悬停效果 */
+.bm-pip-video-container:hover {
+  border-color: #3498db;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.6);
+}
+
+/* 旧的叠加视频样式（保留兼容） */
+.bm-overlay-video {
+  position: absolute;
+  border: 2px solid rgba(52, 152, 219, 0.5);
+  border-radius: 4px;
+  overflow: hidden;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  display: none;
+}
+
+
+/* ========== 属性面板增强样式 ========== */
+
+.bm-prop-divider {
+  height: 1px;
+  background: #444;
+  margin: 16px 0;
+}
+
+/* 变换预设按钮 */
+.bm-transform-presets {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.bm-preset-btn {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  background: #3a3a3a;
+  border: 1px solid #4a4a4a;
+  border-radius: 4px;
+  color: #fff;
+  font-size: 16px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.bm-preset-btn:hover {
+  background: #4a4a4a;
+  border-color: #fb7299;
+}
+
+.bm-preset-btn:active {
+  background: #fb7299;
+}
+
+/* 滑块样式 */
+.bm-slider {
+  width: 100%;
+  height: 6px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: #3a3a3a;
+  border-radius: 3px;
+  outline: none;
+  cursor: pointer;
+}
+
+.bm-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  background: #fb7299;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: transform 0.1s;
+}
+
+.bm-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+}
+
+.bm-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  background: #fb7299;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+
+/* ========== 裁剪手柄增强样式 ========== */
+
+/* 裁剪中的片段 */
+.bm-timeline-clip.trimming {
+  box-shadow: 0 0 0 2px #ff4757, 0 0 20px rgba(255, 71, 87, 0.4);
+  z-index: 50;
+}
+
+/* 裁剪手柄增强 */
+.bm-clip-drag-handle {
+  position: absolute;
+  top: 0;
+  width: 10px;
+  height: 100%;
+  cursor: ew-resize;
+  opacity: 0;
+  transition: opacity 0.2s, background 0.2s;
+  z-index: 10;
+}
+
+.bm-timeline-clip:hover .bm-clip-drag-handle,
+.bm-timeline-clip.trimming .bm-clip-drag-handle {
+  opacity: 1;
+}
+
+.bm-clip-handle-left {
+  left: 0;
+  background: linear-gradient(90deg, rgba(255,255,255,0.6), transparent);
+  border-radius: 4px 0 0 4px;
+}
+
+.bm-clip-handle-right {
+  right: 0;
+  background: linear-gradient(-90deg, rgba(255,255,255,0.6), transparent);
+  border-radius: 0 4px 4px 0;
+}
+
+.bm-clip-drag-handle:hover {
+  background: rgba(251, 114, 153, 0.8) !important;
+}
+
+/* 裁剪手柄内的指示条 */
+.bm-clip-handle-left::after,
+.bm-clip-handle-right::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 2px;
+  height: 60%;
+  background: rgba(255, 255, 255, 0.8);
+  border-radius: 1px;
+}
+
+.bm-clip-handle-left::after {
+  left: 3px;
+}
+
+.bm-clip-handle-right::after {
+  right: 3px;
+}
+
+/* 裁剪时禁用片段拖拽 */
+.bm-timeline-clip.trimming {
+  cursor: ew-resize !important;
+}
+
+.bm-timeline-clip.trimming[draggable="true"] {
+  cursor: ew-resize !important;
+}
+
+
+/* ========== 多选样式 ========== */
+
+/* 多选信息 */
+.bm-multi-select-info {
+  color: #fb7299;
+  font-size: 14px;
+}
+
+.bm-multi-select-info strong {
+  font-size: 18px;
+  margin: 0 4px;
+}
+
+/* 危险按钮 */
+.bm-btn-danger {
+  background: #e74c3c !important;
+  border-color: #c0392b !important;
+}
+
+.bm-btn-danger:hover {
+  background: #c0392b !important;
+}
+
+/* 多选时的片段高亮 */
+.bm-timeline-clip.selected {
+  box-shadow: 0 0 0 2px #fb7299, 0 0 12px rgba(251, 114, 153, 0.4);
+}
+
+/* 多选提示 */
+.bm-selection-hint {
+  position: absolute;
+  bottom: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 4px 12px;
+  background: rgba(0, 0, 0, 0.8);
+  border-radius: 4px;
+  font-size: 11px;
+  color: #888;
+  pointer-events: none;
+  z-index: 50;
+}
+
+
+/* ========== 时间轴缩放样式 ========== */
+
+.bm-timeline-zoom {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: 16px;
+}
+
+.bm-zoom-btn {
+  width: 24px !important;
+  height: 24px !important;
+  font-size: 16px !important;
+  padding: 0 !important;
+  background: #3a3a3a !important;
+}
+
+.bm-zoom-btn:hover {
+  background: #4a4a4a !important;
+}
+
+#bm-zoom-level {
+  font-size: 11px;
+  color: #888;
+  min-width: 40px;
+  text-align: center;
+}
+
+/* 时间轴滚动容器 */
+.bm-timeline-body {
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.bm-timeline-tracks {
+  min-width: 100%;
+  overflow-x: visible;
+}
+
+.bm-track-content {
+  min-width: 100%;
+  transition: width 0.2s ease;
+}
+
+/* 刻度尺缩放 */
+.bm-timeline-ruler {
+  min-width: calc(100% - 60px);
+  transition: width 0.2s ease;
+}
+
+
+/* ========== 吸附对齐样式 ========== */
+
+.bm-snap-indicator {
+  position: absolute;
+  top: 0;
+  width: 2px;
+  height: 100%;
+  background: #2ecc71;
+  z-index: 99;
+  pointer-events: none;
+  display: none;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.bm-snap-indicator.active {
+  opacity: 1;
+}
+
+.bm-snap-indicator::before {
+  content: '⚡';
+  position: absolute;
+  top: -16px;
+  left: -7px;
+  font-size: 12px;
+}
+
+/* 吸附时的片段高亮 */
+.bm-timeline-clip.snapping {
+  box-shadow: 0 0 0 2px #2ecc71, 0 0 15px rgba(46, 204, 113, 0.5);
+}
+
+
+/* 吸附按钮样式 */
+.bm-snap-btn {
+  opacity: 0.5;
+}
+
+.bm-snap-btn.active {
+  opacity: 1;
+  background: #27ae60 !important;
+}
+
+.bm-snap-btn.active:hover {
+  background: #2ecc71 !important;
+}
+
+/* 播放器控制层 */
+.bm-player-controls {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  opacity: 0;
+  transition: opacity 0.3s;
+  pointer-events: none;
+  z-index: 100; /* 确保在画中画元素之上 */
+}
+
+.bm-player-controls.visible,
+.bm-player-wrapper:hover .bm-player-controls {
+  opacity: 1;
+}
+
+.bm-player-controls-center {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: auto;
+}
+
+.bm-player-play-btn {
+  width: 70px;
+  height: 70px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.6);
+  border: 2px solid rgba(255, 255, 255, 0.8);
+  color: #fff;
+  font-size: 28px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  opacity: 0.8;
+}
+
+.bm-player-play-btn:hover {
+  background: rgba(251, 114, 153, 0.8);
+  border-color: #fb7299;
+  transform: scale(1.1);
+  opacity: 1;
+}
+
+.bm-play-icon {
+  margin-left: 4px;
+}
+
+.bm-player-controls-bottom {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 16px 12px;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.8));
+  pointer-events: auto;
+}
+
+/* 进度条 */
+.bm-player-progress-wrapper {
+  width: 100%;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+}
+
+.bm-player-progress-bar {
+  width: 100%;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.3);
+  border-radius: 2px;
+  position: relative;
+  transition: height 0.1s;
+}
+
+.bm-player-progress-wrapper:hover .bm-player-progress-bar {
+  height: 6px;
+}
+
+.bm-player-progress-played {
+  height: 100%;
+  background: #fb7299;
+  border-radius: 2px;
+  width: 0%;
+  position: relative;
+}
+
+.bm-player-progress-played::after {
+  content: '';
+  position: absolute;
+  right: -6px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 12px;
+  height: 12px;
+  background: #fb7299;
+  border-radius: 50%;
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+
+.bm-player-progress-wrapper:hover .bm-player-progress-played::after {
+  opacity: 1;
+}
+
+/* 底部行 */
+.bm-player-bottom-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.bm-player-time {
+  font-size: 12px;
+  color: #fff;
+}
+
+.bm-player-bottom-btns {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.bm-player-btn-sm {
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: transparent;
+  color: #fff;
+  font-size: 16px;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: background 0.2s;
+}
+
+.bm-player-btn-sm:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.bm-volume-slider {
+  width: 80px;
+  height: 4px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: rgba(255, 255, 255, 0.3);
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+.bm-volume-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  background: #fff;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.bm-volume-slider::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  background: #fff;
+  border-radius: 50%;
+  cursor: pointer;
+  border: none;
+}
+
+/* 全屏模式下的播放器 */
+.bm-player-wrapper:fullscreen {
+  max-width: none;
+  border-radius: 0;
+}
+
+.bm-player-wrapper:fullscreen video {
+  object-fit: contain;
+}
+
+
+/* ========== 画中画交互样式 ========== */
+
+/* 画中画容器 */
+.bm-pip-container {
+  cursor: move;
+  transition: box-shadow 0.2s;
+}
+
+.bm-pip-container:hover {
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.8), 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+.bm-pip-container.pip-active {
+  box-shadow: 0 0 0 3px #fb7299, 0 4px 16px rgba(251, 114, 153, 0.4);
+}
+
+/* 缩放手柄提示 */
+.bm-pip-container::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 15px;
+  height: 15px;
+  cursor: nwse-resize;
+  background: linear-gradient(135deg, transparent 50%, rgba(255, 255, 255, 0.5) 50%);
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.bm-pip-container:hover::after {
+  opacity: 1;
+}
+
+/* 播放器背景层 */
+#bm-player-background {
+  pointer-events: none;
 }

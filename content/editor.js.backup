@@ -572,19 +572,25 @@ const VideoEditor = {
     this.playheadTime = 0;
     this.history = [];
     this.historyIndex = -1;
+    this.activeClip = null;
+    this.isPlaying = false;
 
     if (this.currentVideo) {
       // 添加初始片段（不保存历史，因为这是初始状态）
       const clipId = 'clip-' + Date.now();
-      this.timeline.push({
+      const initialClip = {
         id: clipId,
         video: this.currentVideo,
         sourceStart: 0,
         sourceEnd: this.currentVideo.duration,
         timelineStart: 0
-      });
+      };
+      this.timeline.push(initialClip);
       this.recalculateTimeline();
       this.renderTimeline();
+
+      // 设置初始活动片段
+      this.activeClip = initialClip;
 
       // 保存初始状态到历史
       this.saveHistory();
@@ -826,6 +832,12 @@ const VideoEditor = {
     this.recalculateTimeline();
     this.renderTimeline();
 
+    // 更新活动片段引用（播放头在哪个片段就设为活动片段）
+    const updatedResult = this.timelineToSource(this.playheadTime);
+    if (updatedResult) {
+      this.activeClip = updatedResult.clip;
+    }
+
     // 选中后面的片段
     this.selectClip(newClip2.id);
 
@@ -855,7 +867,19 @@ const VideoEditor = {
 
     // 调整播放头位置（如果超出范围）
     if (this.playheadTime > this.timelineDuration) {
-      this.playheadTime = this.timelineDuration;
+      this.playheadTime = Math.max(0, this.timelineDuration - 0.01);
+    }
+
+    // 更新活动片段引用
+    if (this.timeline.length > 0) {
+      const result = this.timelineToSource(this.playheadTime);
+      if (result) {
+        this.activeClip = result.clip;
+      } else {
+        this.activeClip = this.timeline[0];
+      }
+    } else {
+      this.activeClip = null;
     }
 
     // 重新渲染
@@ -918,6 +942,9 @@ const VideoEditor = {
       const clip = result.clip;
       const bvid = clip.video.bvid;
 
+      // 设置当前活动片段
+      this.activeClip = clip;
+
       // 检查是否需要切换视频源
       if (this.currentPlayingBvid !== bvid) {
         // 需要切换到另一个视频
@@ -960,8 +987,8 @@ const VideoEditor = {
     const player = document.getElementById('bm-video-player');
     if (!player) return;
 
-    // 找到当前正在播放的片段（基于播放头位置）
-    const currentClip = this.getCurrentPlayingClip();
+    // 找到当前正在播放的片段
+    const currentClip = this.activeClip || this.getCurrentPlayingClip();
     if (!currentClip) return;
 
     const currentBvid = this.currentPlayingBvid || this.currentVideo?.bvid;
@@ -974,9 +1001,9 @@ const VideoEditor = {
       this.updatePlayhead();
       this.updateTimeDisplay();
       this.updateSubtitleDisplay(sourceTime);
-    } else if (!player.paused) {
-      // 播放到了当前片段之外，需要跳到下一个片段
-      this.handlePlaybackOutOfClip();
+    } else if (!player.paused && sourceTime >= currentClip.sourceEnd) {
+      // 播放到了当前片段结束，需要跳到下一个片段
+      this.playNextClip();
     }
   },
 
@@ -995,62 +1022,104 @@ const VideoEditor = {
     return this.timeline[0] || null;
   },
 
-  // 处理播放超出当前片段的情况
-  async handlePlaybackOutOfClip() {
-    const player = document.getElementById('bm-video-player');
-    if (!player || player.paused) return;
+  // 获取片段在时间轴上的索引（按 timelineStart 排序）
+  getClipIndex(clipId) {
+    const sortedClips = [...this.timeline].sort((a, b) => a.timelineStart - b.timelineStart);
+    return sortedClips.findIndex(c => c.id === clipId);
+  },
 
-    // 获取当前片段
-    const currentClip = this.getCurrentPlayingClip();
+  // 获取排序后的片段列表
+  getSortedClips() {
+    return [...this.timeline].sort((a, b) => a.timelineStart - b.timelineStart);
+  },
+
+  // 切换播放/暂停
+  async togglePlay() {
+    const player = document.getElementById('bm-video-player');
+    if (!player) return;
+
+    if (player.paused) {
+      // 开始播放
+      // 如果没有活动片段，从当前播放头位置找到对应片段
+      if (!this.activeClip) {
+        const result = this.timelineToSource(this.playheadTime);
+        if (result) {
+          this.activeClip = result.clip;
+          
+          // 确保视频源正确
+          const bvid = result.clip.video.bvid;
+          if (this.currentPlayingBvid !== bvid) {
+            const cache = this.mediaCache[bvid];
+            if (cache) {
+              await this.switchToVideoSource(bvid);
+            }
+          }
+          
+          // 设置正确的源时间
+          player.currentTime = result.sourceTime;
+          if (this.audioElement) {
+            this.audioElement.currentTime = result.sourceTime;
+          }
+        }
+      }
+
+      this.isPlaying = true;
+      player.play().catch(() => {});
+      if (this.audioElement) this.audioElement.play().catch(() => {});
+      document.getElementById('bm-play-btn').textContent = '⏸';
+    } else {
+      // 暂停
+      this.isPlaying = false;
+      player.pause();
+      if (this.audioElement) this.audioElement.pause();
+      document.getElementById('bm-play-btn').textContent = '▶';
+    }
+  },
+
+  // 播放下一个片段
+  async playNextClip() {
+    const player = document.getElementById('bm-video-player');
+    if (!player) return;
+
+    const sortedClips = this.getSortedClips();
+    const currentClip = this.activeClip;
+    
     if (!currentClip) return;
 
-    // 计算当前片段在时间轴上的结束位置
-    const currentClipEnd = currentClip.timelineStart + (currentClip.sourceEnd - currentClip.sourceStart);
-
-    // 按 timelineStart 排序
-    const sortedClips = [...this.timeline].sort((a, b) => a.timelineStart - b.timelineStart);
-
-    // 找到当前片段的索引
     const currentIndex = sortedClips.findIndex(c => c.id === currentClip.id);
-
-    // 获取下一个片段
     const nextClip = sortedClips[currentIndex + 1];
 
     if (nextClip) {
-      // 更新播放头到下一个片段的开始
+      // 设置下一个片段为活动片段
+      this.activeClip = nextClip;
       this.playheadTime = nextClip.timelineStart;
 
-      // 检查是否需要切换视频源
       const nextBvid = nextClip.video.bvid;
       const currentBvid = this.currentPlayingBvid || this.currentVideo?.bvid;
 
       if (nextBvid !== currentBvid) {
-        // 需要切换到另一个视频
+        // 需要切换视频源
         const cache = this.mediaCache[nextBvid];
         if (cache) {
-          // 暂停当前播放
           player.pause();
           if (this.audioElement) this.audioElement.pause();
 
-          // 切换视频源
           await this.switchToVideoSource(nextBvid);
 
-          // 设置时间到下一个片段的源起始位置
           player.currentTime = nextClip.sourceStart;
           if (this.audioElement) this.audioElement.currentTime = nextClip.sourceStart;
 
-          // 恢复播放
           player.play().catch(() => {});
           if (this.audioElement) this.audioElement.play().catch(() => {});
         } else {
           console.warn('下一个片段的视频未缓存:', nextBvid);
-          // 跳过这个片段
+          // 跳过未缓存的片段，继续播放下一个
           this.playheadTime = nextClip.timelineStart + (nextClip.sourceEnd - nextClip.sourceStart);
-          this.handlePlaybackOutOfClip();
+          this.playNextClip();
           return;
         }
       } else {
-        // 同一个视频，跳转到下一个片段的源起始位置
+        // 同一个视频，直接跳转
         player.currentTime = nextClip.sourceStart;
         if (this.audioElement) {
           this.audioElement.currentTime = nextClip.sourceStart;
@@ -1060,17 +1129,17 @@ const VideoEditor = {
       this.updatePlayhead();
       this.updateTimeDisplay();
     } else {
-      // 没有下一个片段了，停止播放
+      // 没有下一个片段，停止播放
       player.pause();
       if (this.audioElement) {
         this.audioElement.pause();
       }
+      this.isPlaying = false;
       document.getElementById('bm-play-btn').textContent = '▶';
 
-      // 回到开头
-      if (sortedClips.length > 0) {
-        await this.seekToTimelineTime(0);
-      }
+      // 播放完毕，回到开头
+      this.activeClip = null;
+      await this.seekToTimelineTime(0);
     }
   },
 
@@ -1144,10 +1213,17 @@ const VideoEditor = {
       }
       this.selectClip(clipId);
 
-      // 跳转到片段在时间轴上的起始位置
+      // 计算点击在片段内的相对位置
       const clip = this.timeline.find(c => c.id === clipId);
       if (clip) {
-        await this.seekToTimelineTime(clip.timelineStart);
+        const clipRect = clipEl.getBoundingClientRect();
+        const clickXInClip = e.clientX - clipRect.left;
+        const percentInClip = Math.max(0, Math.min(1, clickXInClip / clipRect.width));
+        const clipDuration = clip.sourceEnd - clip.sourceStart;
+        const timeInClip = percentInClip * clipDuration;
+        const timelineTime = clip.timelineStart + timeInClip;
+        
+        await this.seekToTimelineTime(timelineTime);
       }
       return;
     }
@@ -1224,25 +1300,20 @@ const VideoEditor = {
 
     // 播放/暂停
     document.getElementById('bm-play-btn')?.addEventListener('click', () => {
-      const player = document.getElementById('bm-video-player');
-      if (player) {
-        if (player.paused) {
-          player.play();
-          document.getElementById('bm-play-btn').textContent = '⏸';
-        } else {
-          player.pause();
-          document.getElementById('bm-play-btn').textContent = '▶';
-        }
-      }
+      this.togglePlay();
     });
 
     // 停止
-    document.getElementById('bm-stop-btn')?.addEventListener('click', () => {
+    document.getElementById('bm-stop-btn')?.addEventListener('click', async () => {
       const player = document.getElementById('bm-video-player');
       if (player) {
         player.pause();
-        player.currentTime = 0;
+        if (this.audioElement) this.audioElement.pause();
+        this.isPlaying = false;
+        this.activeClip = null;
         document.getElementById('bm-play-btn').textContent = '▶';
+        // 回到时间轴开头
+        await this.seekToTimelineTime(0);
       }
     });
 
@@ -1761,6 +1832,10 @@ const VideoEditor = {
     this.selectedClipId = state.selectedClipId;
     this.recalculateTimeline();
     this.renderTimeline();
+    
+    // 更新活动片段
+    this.updateActiveClipFromPlayhead();
+    
     MaterialUI.showToast('已撤销');
   },
 
@@ -1777,7 +1852,31 @@ const VideoEditor = {
     this.selectedClipId = state.selectedClipId;
     this.recalculateTimeline();
     this.renderTimeline();
+    
+    // 更新活动片段
+    this.updateActiveClipFromPlayhead();
+    
     MaterialUI.showToast('已重做');
+  },
+  
+  // 根据播放头位置更新活动片段
+  updateActiveClipFromPlayhead() {
+    if (this.timeline.length === 0) {
+      this.activeClip = null;
+      return;
+    }
+    
+    // 确保播放头在有效范围内
+    if (this.playheadTime > this.timelineDuration) {
+      this.playheadTime = Math.max(0, this.timelineDuration - 0.01);
+    }
+    
+    const result = this.timelineToSource(this.playheadTime);
+    if (result) {
+      this.activeClip = result.clip;
+    } else {
+      this.activeClip = this.timeline[0];
+    }
   },
 
   // 保存草稿
@@ -2000,17 +2099,23 @@ const VideoEditor = {
     const clipId = 'clip-' + Date.now();
     const duration = videoInfo.duration || 60;
 
-    this.timeline.push({
+    const newClip = {
       id: clipId,
       video: videoInfo,
       sourceStart: 0,
       sourceEnd: duration,
       timelineStart: this.timelineDuration
-    });
+    };
+    this.timeline.push(newClip);
 
     // 重新计算时间轴
     this.recalculateTimeline();
     this.renderTimeline();
+
+    // 如果当前没有活动片段，设置第一个片段为活动片段
+    if (!this.activeClip && this.timeline.length > 0) {
+      this.activeClip = this.timeline[0];
+    }
 
     MaterialUI.showToast(`已添加: ${videoInfo.title.substring(0, 20)}...`);
   },
@@ -2136,6 +2241,8 @@ const VideoEditor = {
     this.mediaCache = {};
     this.currentPlayingBvid = null;
     this.isInitialLoad = true;
+    this.activeClip = null;
+    this.isPlaying = false;
   }
 };
 
