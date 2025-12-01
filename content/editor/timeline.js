@@ -13,7 +13,6 @@ const TimelineManager = {
     EditorCore.init();
     
     // 重置颜色计数器
-    this.colorIndex = 0;
     TrackManager._colorIndex = 0;
 
     if (state.currentVideo) {
@@ -32,57 +31,9 @@ const TimelineManager = {
     }
   },
 
-  // 颜色计数器 - 确保每个新片段获得不同颜色
-  colorIndex: 0,
-  
-  // 预定义的鲜艳颜色列表 - 颜色跨度大，视觉区分明显
-  CLIP_COLORS: [
-    // 第一轮：主要颜色，跨度大
-    { hue: 0, saturation: 75, lightness: 55 },     // 红
-    { hue: 120, saturation: 65, lightness: 45 },   // 绿
-    { hue: 210, saturation: 75, lightness: 55 },   // 蓝
-    { hue: 45, saturation: 85, lightness: 55 },    // 橙黄
-    { hue: 280, saturation: 65, lightness: 60 },   // 紫
-    { hue: 170, saturation: 70, lightness: 45 },   // 青
-    { hue: 330, saturation: 70, lightness: 60 },   // 粉红
-    { hue: 60, saturation: 70, lightness: 50 },    // 黄
-    
-    // 第二轮：次要颜色
-    { hue: 15, saturation: 80, lightness: 55 },    // 橙红
-    { hue: 150, saturation: 60, lightness: 48 },   // 青绿
-    { hue: 240, saturation: 60, lightness: 60 },   // 蓝紫
-    { hue: 30, saturation: 85, lightness: 52 },    // 橙
-    { hue: 300, saturation: 55, lightness: 58 },   // 洋红
-    { hue: 90, saturation: 55, lightness: 48 },    // 黄绿
-    { hue: 195, saturation: 70, lightness: 50 },   // 天蓝
-    { hue: 350, saturation: 70, lightness: 58 },   // 玫红
-    
-    // 第三轮：更多变体
-    { hue: 5, saturation: 85, lightness: 50 },     // 深红
-    { hue: 135, saturation: 55, lightness: 42 },   // 深绿
-    { hue: 225, saturation: 65, lightness: 52 },   // 钴蓝
-    { hue: 55, saturation: 80, lightness: 48 },    // 金黄
-    { hue: 265, saturation: 60, lightness: 55 },   // 蓝紫
-    { hue: 180, saturation: 60, lightness: 45 },   // 蓝青
-    { hue: 315, saturation: 65, lightness: 55 },   // 粉紫
-    { hue: 75, saturation: 60, lightness: 45 },    // 草绿
-    
-    // 第四轮：补充颜色
-    { hue: 20, saturation: 75, lightness: 58 },    // 珊瑚
-    { hue: 160, saturation: 55, lightness: 50 },   // 薄荷
-    { hue: 250, saturation: 55, lightness: 58 },   // 薰衣草
-    { hue: 40, saturation: 80, lightness: 50 },    // 琥珀
-    { hue: 290, saturation: 50, lightness: 55 },   // 兰花紫
-    { hue: 105, saturation: 50, lightness: 45 },   // 橄榄绿
-    { hue: 200, saturation: 65, lightness: 55 },   // 天空蓝
-    { hue: 340, saturation: 75, lightness: 55 },   // 玫瑰红
-  ],
-  
-  // 生成片段颜色 - 顺序分配，确保每个片段颜色不同
+  // 生成片段颜色 - 委托给 TrackManager
   generateClipColor(clipId) {
-    const color = this.CLIP_COLORS[this.colorIndex % this.CLIP_COLORS.length];
-    this.colorIndex++;
-    return { ...color };
+    return TrackManager.generateClipColor();
   },
 
   // 重新计算时间轴
@@ -470,46 +421,21 @@ const TimelineManager = {
     return clip.timelineStart + offsetInClip;
   },
 
-  // 获取当前播放头位置对应的片段（主轨道）
+  // 获取当前播放头位置对应的片段（主轨道）- 委托给 TrackManager
   getCurrentClip() {
-    const state = this.state;
-    const track = state.tracks.video[0];
-    
-    for (const clip of track) {
-      const clipEnd = clip.timelineStart + (clip.sourceEnd - clip.sourceStart);
-      if (state.playheadTime >= clip.timelineStart && state.playheadTime < clipEnd) {
-        return clip;
-      }
-    }
-    
-    if (track.length > 0 && state.playheadTime >= state.timelineDuration) {
+    const clip = TrackManager.getClipAtTime(this.state.tracks, 0, this.state.playheadTime);
+    if (clip) return clip;
+    // 兜底：播放头超出时返回最后一个，否则返回第一个
+    const track = this.state.tracks.video[0];
+    if (track.length > 0 && this.state.playheadTime >= this.state.timelineDuration) {
       return track[track.length - 1];
     }
     return track[0] || null;
   },
   
-  // 获取当前时间点所有轨道的活动片段（用于多轨道同时播放）
-  // 返回数组，按轨道索引排序，索引越大层级越高（显示在上面）
+  // 获取当前时间点所有轨道的活动片段 - 委托给 TrackManager
   getActiveClipsAtTime(timelineTime) {
-    const state = this.state;
-    const activeClips = [];
-    
-    state.tracks.video.forEach((track, trackIndex) => {
-      for (const clip of track) {
-        const clipEnd = clip.timelineStart + (clip.sourceEnd - clip.sourceStart);
-        if (timelineTime >= clip.timelineStart && timelineTime < clipEnd) {
-          const offsetInClip = timelineTime - clip.timelineStart;
-          activeClips.push({
-            clip: clip,
-            trackIndex: trackIndex,
-            sourceTime: clip.sourceStart + offsetInClip
-          });
-          break; // 每个轨道只取一个片段
-        }
-      }
-    });
-    
-    return activeClips;
+    return TrackManager.getActiveClipsAtTime(this.state.tracks, timelineTime);
   },
 
   // 获取排序后的片段列表（主轨道）

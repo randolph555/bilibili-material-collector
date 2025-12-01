@@ -30,6 +30,7 @@ const TrackManager = {
   _colorIndex: 0,
   
   CLIP_COLORS: [
+    // 第一轮：主要颜色，跨度大
     { hue: 0, saturation: 75, lightness: 55 },     // 红
     { hue: 120, saturation: 65, lightness: 45 },   // 绿
     { hue: 210, saturation: 75, lightness: 55 },   // 蓝
@@ -38,6 +39,33 @@ const TrackManager = {
     { hue: 170, saturation: 70, lightness: 45 },   // 青
     { hue: 330, saturation: 70, lightness: 60 },   // 粉红
     { hue: 60, saturation: 70, lightness: 50 },    // 黄
+    // 第二轮：次要颜色
+    { hue: 15, saturation: 80, lightness: 55 },    // 橙红
+    { hue: 150, saturation: 60, lightness: 48 },   // 青绿
+    { hue: 240, saturation: 60, lightness: 60 },   // 蓝紫
+    { hue: 30, saturation: 85, lightness: 52 },    // 橙
+    { hue: 300, saturation: 55, lightness: 58 },   // 洋红
+    { hue: 90, saturation: 55, lightness: 48 },    // 黄绿
+    { hue: 195, saturation: 70, lightness: 50 },   // 天蓝
+    { hue: 350, saturation: 70, lightness: 58 },   // 玫红
+    // 第三轮：更多变体
+    { hue: 5, saturation: 85, lightness: 50 },     // 深红
+    { hue: 135, saturation: 55, lightness: 42 },   // 深绿
+    { hue: 225, saturation: 65, lightness: 52 },   // 钴蓝
+    { hue: 55, saturation: 80, lightness: 48 },    // 金黄
+    { hue: 265, saturation: 60, lightness: 55 },   // 蓝紫
+    { hue: 180, saturation: 60, lightness: 45 },   // 蓝青
+    { hue: 315, saturation: 65, lightness: 55 },   // 粉紫
+    { hue: 75, saturation: 60, lightness: 45 },    // 草绿
+    // 第四轮：补充颜色
+    { hue: 20, saturation: 75, lightness: 58 },    // 珊瑚
+    { hue: 160, saturation: 55, lightness: 50 },   // 薄荷
+    { hue: 250, saturation: 55, lightness: 58 },   // 薰衣草
+    { hue: 40, saturation: 80, lightness: 50 },    // 琥珀
+    { hue: 290, saturation: 50, lightness: 55 },   // 兰花紫
+    { hue: 105, saturation: 50, lightness: 45 },   // 橄榄绿
+    { hue: 200, saturation: 65, lightness: 55 },   // 天空蓝
+    { hue: 340, saturation: 75, lightness: 55 },   // 玫瑰红
   ],
 
   generateClipColor() {
