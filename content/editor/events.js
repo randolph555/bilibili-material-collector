@@ -178,22 +178,16 @@ const EditorEvents = {
       MaterialUI.showToast(`吸附对齐已${this.state.snapEnabled ? '开启' : '关闭'}`);
     });
 
-    // 设置裁剪起点
+    // 设置裁剪起点 - 使用 TimeController 获取时间轴时间
     document.getElementById('bm-set-clip-start')?.addEventListener('click', () => {
-      const player = PlayerController.videoElement;
-      if (player) {
-        document.getElementById('bm-clip-start').value =
-          BiliAPI.formatDuration(Math.floor(player.currentTime));
-      }
+      document.getElementById('bm-clip-start').value =
+        BiliAPI.formatDuration(Math.floor(TimeController.currentTime));
     });
 
-    // 设置裁剪终点
+    // 设置裁剪终点 - 使用 TimeController 获取时间轴时间
     document.getElementById('bm-set-clip-end')?.addEventListener('click', () => {
-      const player = PlayerController.videoElement;
-      if (player) {
-        document.getElementById('bm-clip-end').value =
-          BiliAPI.formatDuration(Math.floor(player.currentTime));
-      }
+      document.getElementById('bm-clip-end').value =
+        BiliAPI.formatDuration(Math.floor(TimeController.currentTime));
     });
   },
 
@@ -350,8 +344,6 @@ const EditorEvents = {
         return;
       }
 
-      const player = PlayerController.videoElement;
-
       // Ctrl/Cmd + Z 撤销
       if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
         e.preventDefault();
@@ -407,14 +399,11 @@ const EditorEvents = {
         return;
       }
 
-      // J 键后退 5 秒
+      // J 键后退 5 秒 - 使用 TimeController 统一控制
       if (e.key === 'j' || e.key === 'J') {
-        if (player) {
-          player.currentTime = Math.max(0, player.currentTime - 5);
-          if (PlayerController.audioElement) {
-            PlayerController.audioElement.currentTime = player.currentTime;
-          }
-        }
+        e.preventDefault();
+        const newTime = Math.max(0, TimeController.currentTime - 5);
+        PlayerController.seekToTime(newTime);
         return;
       }
 
@@ -424,40 +413,29 @@ const EditorEvents = {
         return;
       }
 
-      // L 键前进 5 秒
+      // L 键前进 5 秒 - 使用 TimeController 统一控制
       if (e.key === 'l' || e.key === 'L') {
-        if (player) {
-          player.currentTime = Math.min(player.duration, player.currentTime + 5);
-          if (PlayerController.audioElement) {
-            PlayerController.audioElement.currentTime = player.currentTime;
-          }
-        }
+        e.preventDefault();
+        const newTime = Math.min(TimeController.contentDuration, TimeController.currentTime + 5);
+        PlayerController.seekToTime(newTime);
         return;
       }
 
-      // 左方向键后退
+      // 左方向键后退 - 使用 TimeController 统一控制
       if (e.key === 'ArrowLeft') {
         e.preventDefault();
-        if (player) {
-          const step = e.shiftKey ? 1 : 0.04;
-          player.currentTime = Math.max(0, player.currentTime - step);
-          if (PlayerController.audioElement) {
-            PlayerController.audioElement.currentTime = player.currentTime;
-          }
-        }
+        const step = e.shiftKey ? 1 : 0.04; // Shift: 1秒, 普通: 1帧(约0.04秒)
+        const newTime = Math.max(0, TimeController.currentTime - step);
+        PlayerController.seekToTime(newTime);
         return;
       }
 
-      // 右方向键前进
+      // 右方向键前进 - 使用 TimeController 统一控制
       if (e.key === 'ArrowRight') {
         e.preventDefault();
-        if (player) {
-          const step = e.shiftKey ? 1 : 0.04;
-          player.currentTime = Math.min(player.duration, player.currentTime + step);
-          if (PlayerController.audioElement) {
-            PlayerController.audioElement.currentTime = player.currentTime;
-          }
-        }
+        const step = e.shiftKey ? 1 : 0.04;
+        const newTime = Math.min(TimeController.contentDuration, TimeController.currentTime + step);
+        PlayerController.seekToTime(newTime);
         return;
       }
 
