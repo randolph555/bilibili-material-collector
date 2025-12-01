@@ -234,17 +234,13 @@ const PlayerController = {
     videoPlayer.muted = true;
   },
 
-  // 切换播放/暂停 - 委托给 CompositorPlayer
+  // 切换播放/暂停 - 使用 TimeController 统一控制
   async togglePlay() {
-    const state = this.state;
-
-    if (!state.isPlaying) {
+    if (!TimeController.isPlaying) {
       // 播放结束后从头播放
-      if (state.playheadTime >= state.timelineDuration) {
-        state.playheadTime = 0;
+      if (TimeController.currentTime >= TimeController.contentDuration) {
+        TimeController.seek(0);
       }
-      
-      state.isPlaying = true;
       
       if (typeof CompositorPlayer !== 'undefined') {
         await CompositorPlayer.play();
@@ -252,8 +248,6 @@ const PlayerController = {
       
       document.getElementById('bm-play-btn').textContent = '⏸';
     } else {
-      state.isPlaying = false;
-      
       if (typeof CompositorPlayer !== 'undefined') {
         CompositorPlayer.pause();
       }
@@ -281,23 +275,22 @@ const PlayerController = {
     }
   },
 
-  // 更新时间显示和进度条
+  // 更新时间显示和进度条 - 使用 TimeController
   updateTimeDisplay() {
-    const state = this.state;
-    const currentTime = state.playheadTime;
+    const currentTime = TimeController.currentTime;
     // 使用内容时长（所有轨道最长结束点），不是时间轴可视范围
-    const duration = state.contentDuration || 1;
+    const duration = TimeController.contentDuration || 1;
     
     // 更新底部时间显示
     const currentTimeEl = document.getElementById('bm-current-time');
     if (currentTimeEl) {
-      currentTimeEl.textContent = BiliAPI.formatDuration(Math.floor(currentTime));
+      currentTimeEl.textContent = TimeController.formatTime(currentTime);
     }
     
     // 更新播放器内时间显示
     const playerTimeEl = document.getElementById('bm-player-time');
     if (playerTimeEl) {
-      playerTimeEl.textContent = `${BiliAPI.formatDuration(Math.floor(currentTime))} / ${BiliAPI.formatDuration(Math.floor(duration))}`;
+      playerTimeEl.textContent = `${TimeController.formatTime(currentTime)} / ${TimeController.formatTime(duration)}`;
     }
     
     // 更新进度条 - 基于内容时长

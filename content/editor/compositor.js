@@ -189,10 +189,9 @@ const CompositorPlayer = {
     });
   },
 
-  // 播放
+  // 播放 - 使用 TimeController 统一控制
   async play() {
-    const state = this.state;
-    const currentTime = state.playheadTime;
+    const currentTime = TimeController.currentTime;
 
     // 查找当前时间的主轨道片段
     const mainClip = this.getClipAtTime(0, currentTime);
@@ -216,6 +215,7 @@ const CompositorPlayer = {
     }
 
     // 画中画 - 检查所有叠加轨道
+    const state = this.state;
     for (let i = 1; i < state.tracks.video.length; i++) {
       const clip = this.getClipAtTime(i, currentTime);
       const pip = this.pipElements[i];
@@ -242,30 +242,31 @@ const CompositorPlayer = {
     this.startPlaybackLoop();
   },
 
-  // 暂停
+  // 暂停 - 同时暂停 TimeController 和视频元素
   pause() {
     this.isPlaying = false;
-    if (this.animationId) {
-      cancelAnimationFrame(this.animationId);
-      this.animationId = null;
-    }
     
+    // 暂停 TimeController
+    TimeController.pause();
+    
+    // 取消事件订阅
+    this._unsubscribeAll();
+    
+    // 暂停所有视频元素
     this.mainVideo?.pause();
     this.mainAudio?.pause();
     Object.values(this.pipElements).forEach(pip => pip.video?.pause());
   },
 
-  // 停止
+  // 停止 - 暂停并回到起点
   stop() {
     this.pause();
-    this.state.playheadTime = 0;
+    TimeController.seek(0);
     this.seekTo(0);
   },
 
-  // 跳转到指定时间轴时间
+  // 跳转到指定时间轴时间 - 使用 TimeController
   async seekTo(timelineTime) {
-    const state = this.state;
-    
     // 确保元素引用存在
     if (!this.mainVideo) {
       this.mainVideo = document.getElementById('bm-video-player');
@@ -274,20 +275,17 @@ const CompositorPlayer = {
       this.mainAudio = document.getElementById('bm-audio-player');
     }
     
-    const targetTime = Math.max(0, Math.min(timelineTime, state.timelineDuration || 1));
+    // 使用 TimeController 进行跳转（会自动限制范围）
+    TimeController.seek(timelineTime);
+    const targetTime = TimeController.currentTime;
     
     // 先停止播放循环
     const wasPlaying = this.isPlaying;
     if (wasPlaying) {
       this.isPlaying = false;
-      if (this.animationId) {
-        cancelAnimationFrame(this.animationId);
-        this.animationId = null;
-      }
+      TimeController.pause();
+      this._unsubscribeAll();
     }
-    
-    // 设置新时间
-    state.playheadTime = targetTime;
 
     // 主视频 - 查找该时间点的片段
     const mainClip = this.getClipAtTime(0, targetTime);
@@ -311,6 +309,7 @@ const CompositorPlayer = {
     }
 
     // 画中画轨道
+    const state = this.state;
     for (let i = 1; i < state.tracks.video.length; i++) {
       const clip = this.getClipAtTime(i, targetTime);
       const pip = this.pipElements[i];
@@ -337,84 +336,86 @@ const CompositorPlayer = {
     }
   },
 
-  // 播放循环
-  // 规则：
-  // - 播放到 contentDuration（所有轨道最长结束点）就停止
-  // - 不播放超出内容的空白时间轴区域
+  // 播放循环 - 完全由 TimeController 驱动
   startPlaybackLoop() {
-    let lastTime = performance.now();
-
-    const loop = () => {
-      if (!this.isPlaying) return;
-
-      const now = performance.now();
-      const delta = (now - lastTime) / 1000;
-      lastTime = now;
-
-      const state = this.state;
-      
-      // 推进播放头
-      state.playheadTime += delta;
-
-      // 播放结束检查：使用内容时长（所有轨道最长结束点）
-      // 最后一段视频播放完就停止，不继续播放空白
-      const endTime = state.contentDuration || 0;
-      if (state.playheadTime >= endTime) {
-        this.pause();
-        state.isPlaying = false;
-        state.playheadTime = endTime;
-        document.getElementById('bm-play-btn').textContent = '▶';
-        TimelineManager.updatePlayhead();
-        PlayerController.updateTimeDisplay();
-        return;
-      }
-
-      // 主轨道处理
-      const mainClip = this.getClipAtTime(0, state.playheadTime);
-      
-      if (mainClip) {
-        // 主轨道有片段：播放视频
-        this.hideBackground();
-        
-        // 检查是否需要切换片段
-        if (mainClip.id !== this.currentClipId) {
-          this.currentClipId = mainClip.id;
-          
-          // 检查是否需要切换视频源（不同的视频）
-          if (mainClip.video.bvid !== this.mainLoadedBvid) {
-            // 需要切换视频源
-            this.switchMainVideo(mainClip, state.playheadTime);
-          } else {
-            // 同一个视频，只需要跳转时间
-            const sourceTime = mainClip.sourceStart + (state.playheadTime - mainClip.timelineStart);
-            this.mainVideo.currentTime = sourceTime;
-            if (this.mainAudio) this.mainAudio.currentTime = sourceTime;
-          }
-        }
-        
-        if (this.mainVideo.paused) {
-          this.mainVideo.play().catch(() => {});
-          if (this.mainAudio) this.mainAudio.play().catch(() => {});
-        }
-      } else {
-        // 主轨道空隙：显示黑屏
-        this.showBackground('gap');
-        this.mainVideo.pause();
-        if (this.mainAudio) this.mainAudio.pause();
-        this.currentClipId = null;
-      }
-
-      // 更新画中画（不管主轨道状态如何，画中画都正常播放）
-      this.updatePipVisibility(state.playheadTime);
-
-      // 更新 UI
+    // 取消之前的订阅
+    this._unsubscribeAll();
+    
+    // 订阅时间更新事件 - TimeController 会驱动时间前进
+    this._unsubscribeTimeUpdate = TimeController.on(TimeController.Events.TIME_UPDATE, ({ currentTime }) => {
+      this._onTimeUpdate(currentTime);
+    });
+    
+    // 订阅播放结束事件
+    this._unsubscribePlaybackEnd = TimeController.on(TimeController.Events.PLAYBACK_END, () => {
+      this.isPlaying = false;
+      document.getElementById('bm-play-btn').textContent = '▶';
       TimelineManager.updatePlayhead();
       PlayerController.updateTimeDisplay();
+    });
+    
+    // 启动 TimeController 的播放循环
+    TimeController.play();
+  },
+  
+  // 取消所有事件订阅
+  _unsubscribeAll() {
+    if (this._unsubscribeTimeUpdate) {
+      this._unsubscribeTimeUpdate();
+      this._unsubscribeTimeUpdate = null;
+    }
+    if (this._unsubscribePlaybackEnd) {
+      this._unsubscribePlaybackEnd();
+      this._unsubscribePlaybackEnd = null;
+    }
+  },
+  
+  // 时间更新回调
+  _onTimeUpdate(currentTime) {
+    if (!this.isPlaying) return;
+    
+    const state = this.state;
 
-      this.animationId = requestAnimationFrame(loop);
-    };
+    // 主轨道处理
+    const mainClip = this.getClipAtTime(0, currentTime);
+    
+    if (mainClip) {
+      // 主轨道有片段：播放视频
+      this.hideBackground();
+      
+      // 检查是否需要切换片段
+      if (mainClip.id !== this.currentClipId) {
+        this.currentClipId = mainClip.id;
+        
+        // 检查是否需要切换视频源（不同的视频）
+        if (mainClip.video.bvid !== this.mainLoadedBvid) {
+          this.switchMainVideo(mainClip, currentTime);
+        } else {
+          // 同一个视频，只需要跳转时间
+          const sourceTime = mainClip.sourceStart + (currentTime - mainClip.timelineStart);
+          this.mainVideo.currentTime = sourceTime;
+          if (this.mainAudio) this.mainAudio.currentTime = sourceTime;
+        }
+      }
+      
+      if (this.mainVideo.paused) {
+        this.mainVideo.play().catch(() => {});
+        if (this.mainAudio) this.mainAudio.play().catch(() => {});
+      }
+    } else {
+      // 主轨道空隙：显示黑屏
+      this.showBackground('gap');
+      this.mainVideo.pause();
+      if (this.mainAudio) this.mainAudio.pause();
+      this.currentClipId = null;
+    }
 
-    this.animationId = requestAnimationFrame(loop);
+    // 更新画中画
+    this.updatePipVisibility(currentTime);
+
+    // 更新 UI
+    TimelineManager.updatePlayhead();
+    PlayerController.updateTimeDisplay();
   },
   
   // 显示背景（主轨道空隙时显示黑色）
@@ -613,12 +614,16 @@ const CompositorPlayer = {
   // 清理
   cleanup() {
     this.pause();
+    this._unsubscribeAll();
     this.mainLoadedBvid = null;
     Object.values(this.pipElements).forEach(pip => {
       pip.video?.pause();
       pip.container?.remove();
     });
     this.pipElements = {};
+    
+    // 隐藏背景
+    this.hideBackground();
   }
 };
 
