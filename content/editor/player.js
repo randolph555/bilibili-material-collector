@@ -285,7 +285,8 @@ const PlayerController = {
   updateTimeDisplay() {
     const state = this.state;
     const currentTime = state.playheadTime;
-    const duration = state.timelineDuration || 1;
+    // 使用内容时长（所有轨道最长结束点），不是时间轴可视范围
+    const duration = state.contentDuration || 1;
     
     // 更新底部时间显示
     const currentTimeEl = document.getElementById('bm-current-time');
@@ -299,10 +300,10 @@ const PlayerController = {
       playerTimeEl.textContent = `${BiliAPI.formatDuration(Math.floor(currentTime))} / ${BiliAPI.formatDuration(Math.floor(duration))}`;
     }
     
-    // 更新进度条
+    // 更新进度条 - 基于内容时长
     const progressEl = document.getElementById('bm-player-progress-played');
     if (progressEl) {
-      const percent = (currentTime / duration) * 100;
+      const percent = Math.min(100, (currentTime / duration) * 100);
       progressEl.style.width = `${percent}%`;
     }
   },

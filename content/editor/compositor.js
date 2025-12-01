@@ -339,10 +339,8 @@ const CompositorPlayer = {
 
   // 播放循环
   // 规则：
-  // - 主轨道有片段：播放视频
-  // - 主轨道空隙：显示黑屏，静音
-  // - 主轨道结束后：显示浅紫色背景，画中画继续播放
-  // - 时间轴结束：所有轨道都结束时停止
+  // - 播放到 contentDuration（所有轨道最长结束点）就停止
+  // - 不播放超出内容的空白时间轴区域
   startPlaybackLoop() {
     let lastTime = performance.now();
 
@@ -358,11 +356,13 @@ const CompositorPlayer = {
       // 推进播放头
       state.playheadTime += delta;
 
-      // 播放结束检查：使用时间轴总时长（包含所有轨道）
-      if (state.playheadTime >= state.timelineDuration) {
+      // 播放结束检查：使用内容时长（所有轨道最长结束点）
+      // 最后一段视频播放完就停止，不继续播放空白
+      const endTime = state.contentDuration || 0;
+      if (state.playheadTime >= endTime) {
         this.pause();
         state.isPlaying = false;
-        state.playheadTime = state.timelineDuration;
+        state.playheadTime = endTime;
         document.getElementById('bm-play-btn').textContent = '▶';
         TimelineManager.updatePlayhead();
         PlayerController.updateTimeDisplay();
@@ -370,16 +370,9 @@ const CompositorPlayer = {
       }
 
       // 主轨道处理
-      const mainTrackEnd = state.mainTrackDuration || state.timelineDuration;
       const mainClip = this.getClipAtTime(0, state.playheadTime);
       
-      if (state.playheadTime >= mainTrackEnd) {
-        // 主轨道已结束：显示浅紫色背景
-        this.showBackground('ended');
-        this.mainVideo.pause();
-        if (this.mainAudio) this.mainAudio.pause();
-        this.currentClipId = null;
-      } else if (mainClip) {
+      if (mainClip) {
         // 主轨道有片段：播放视频
         this.hideBackground();
         
@@ -424,7 +417,7 @@ const CompositorPlayer = {
     this.animationId = requestAnimationFrame(loop);
   },
   
-  // 显示背景（空隙或主轨道结束）
+  // 显示背景（主轨道空隙时显示黑色）
   showBackground(type) {
     if (!this.backgroundEl) {
       this.backgroundEl = document.createElement('div');
@@ -433,19 +426,16 @@ const CompositorPlayer = {
         position: absolute;
         top: 0; left: 0;
         width: 100%; height: 100%;
-        z-index: 0;
+        z-index: 5;
         display: none;
         pointer-events: none;
       `;
       const wrapper = document.getElementById('bm-player-wrapper');
-      if (wrapper) wrapper.insertBefore(this.backgroundEl, wrapper.firstChild);
+      if (wrapper) wrapper.appendChild(this.backgroundEl);
     }
     
-    if (type === 'gap') {
-      this.backgroundEl.style.background = '#000'; // 黑色
-    } else {
-      this.backgroundEl.style.background = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'; // 浅紫色
-    }
+    // 主轨道空隙：黑色背景
+    this.backgroundEl.style.background = '#000';
     this.backgroundEl.style.display = 'block';
   },
   

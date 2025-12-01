@@ -94,38 +94,34 @@ const TimelineManager = {
   },
 
   // 重新计算时间轴
-  // 规则：时间轴总时长由主轨道决定，画中画可以超出但会被截断
+  // 重新计算时间轴
+  // 规则：
+  // - contentDuration = 所有轨道中最长片段的结束时间（真正的视频总时长，播放到这里停止）
+  // - timelineDuration = contentDuration + 额外空间（方便用户操作，但不会播放超出内容的部分）
   recalculate() {
     const state = this.state;
     
-    // 1. 计算主轨道的最大结束时间（这是实际内容时长）
-    let mainTrackEnd = 0;
-    const mainTrack = state.tracks.video[0] || [];
-    mainTrack.forEach(clip => {
-      const clipEnd = clip.timelineStart + (clip.sourceEnd - clip.sourceStart);
-      mainTrackEnd = Math.max(mainTrackEnd, clipEnd);
+    // 1. 计算所有轨道的最大结束时间（这是真正的内容时长）
+    let contentEnd = 0;
+    state.tracks.video.forEach(track => {
+      track.forEach(clip => {
+        const clipEnd = clip.timelineStart + (clip.sourceEnd - clip.sourceStart);
+        contentEnd = Math.max(contentEnd, clipEnd);
+      });
     });
     
-    // 2. 计算所有轨道的最大结束时间（用于时间轴可视范围）
-    let allTracksEnd = mainTrackEnd;
-    for (let i = 1; i < state.tracks.video.length; i++) {
-      state.tracks.video[i].forEach(clip => {
-        const clipEnd = clip.timelineStart + (clip.sourceEnd - clip.sourceStart);
-        allTracksEnd = Math.max(allTracksEnd, clipEnd);
-      });
-    }
+    // 2. 保存内容时长（播放结束判断用这个）
+    // 所有轨道最长的那段视频结束 = 整个视频的总时长
+    state.contentDuration = contentEnd || 0;
     
-    // 3. 保存主轨道时长（播放结束判断用这个）
-    state.mainTrackDuration = mainTrackEnd || 1;
-    
-    // 4. 时间轴可视范围 = 所有轨道最大值 + 额外空间
-    const extraSpace = Math.max(10, allTracksEnd * 0.2);
-    state.timelineDuration = Math.max(allTracksEnd + extraSpace, 30);
+    // 3. 时间轴可视范围 = 内容时长 + 额外空间（方便用户拖拽操作）
+    const extraSpace = Math.max(10, contentEnd * 0.2);
+    state.timelineDuration = Math.max(contentEnd + extraSpace, 30);
 
-    // 5. 更新时间轴时长显示（显示主轨道时长）
+    // 4. 更新时间轴时长显示（显示真正的内容时长）
     const durationEl = document.getElementById('bm-timeline-duration');
     if (durationEl) {
-      durationEl.textContent = BiliAPI.formatDuration(Math.floor(mainTrackEnd));
+      durationEl.textContent = BiliAPI.formatDuration(Math.floor(contentEnd));
     }
   },
 

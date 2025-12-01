@@ -468,10 +468,10 @@ const EditorEvents = {
         return;
       }
 
-      // End 键跳到结尾
+      // End 键跳到结尾（内容结束点）
       if (e.key === 'End') {
         e.preventDefault();
-        PlayerController.seekToTime(this.state.timelineDuration);
+        PlayerController.seekToTime(this.state.contentDuration || 0);
         return;
       }
 
@@ -748,12 +748,12 @@ const EditorEvents = {
       this.updatePlayerControlsUI();
     });
     
-    // 进度条点击跳转
+    // 进度条点击跳转 - 基于内容时长
     progressWrapper?.addEventListener('click', async (e) => {
       e.stopPropagation();
       const rect = progressWrapper.getBoundingClientRect();
       const percent = (e.clientX - rect.left) / rect.width;
-      const targetTime = percent * this.state.timelineDuration;
+      const targetTime = percent * (this.state.contentDuration || 1);
       await PlayerController.seekToTime(targetTime);
     });
     

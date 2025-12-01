@@ -31,11 +31,11 @@ const EditorState = {
     this.tracks.video[0] = val;
   },
   
-  timelineDuration: 0,
+  timelineDuration: 0, // 时间轴可视范围（包含额外空间，方便操作）
+  contentDuration: 0, // 真正的内容时长（所有轨道最长结束点，播放到这里停止）
   timelineZoom: 1, // 时间轴缩放比例 (0.5 - 4)
   snapEnabled: true, // 吸附对齐开关
   snapThreshold: 0.5, // 吸附阈值（秒）
-  mainTrackDuration: 0, // 主轨道时长（播放结束判断用）
   
   // 播放状态
   isPlaying: false,
@@ -78,7 +78,7 @@ const EditorState = {
       audio: [[]]
     };
     this.timelineDuration = 0;
-    this.mainTrackDuration = 0;
+    this.contentDuration = 0;
     this.timelineZoom = 1;
     this.snapEnabled = true;
     this.snapThreshold = 0.5;
