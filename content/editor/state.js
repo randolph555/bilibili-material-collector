@@ -70,14 +70,24 @@ const EditorState = {
     return TimeController.isPlaying;
   },
   set isPlaying(val) {
-    TimeController._isPlaying = val;
+    // 注意：不建议直接设置 isPlaying，应该使用 play()/pause() 方法
+    // 这里保留是为了兼容旧代码，但只在必要时使用
+    if (val && !TimeController.isPlaying) {
+      // 如果要设置为播放，应该调用 play()
+      console.warn('[EditorState] 不建议直接设置 isPlaying=true，请使用 CompositorPlayer.play()');
+    } else if (!val && TimeController.isPlaying) {
+      // 如果要设置为暂停，调用 pause()
+      TimeController.pause();
+    }
   },
   
   get playheadTime() {
     return TimeController.currentTime;
   },
   set playheadTime(val) {
-    TimeController._currentTime = val;
+    // 使用 seek 方法来设置时间，这样会触发事件并限制范围
+    // 但为了避免在播放中触发不必要的 seek 事件，直接设置内部值
+    TimeController._currentTime = Math.max(0, Math.min(val, TimeController.contentDuration || val));
   },
   
   get selectedClipId() {

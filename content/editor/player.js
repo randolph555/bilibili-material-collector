@@ -237,8 +237,9 @@ const PlayerController = {
   // 切换播放/暂停 - 使用 TimeController 统一控制
   async togglePlay() {
     if (!TimeController.isPlaying) {
-      // 播放结束后从头播放
-      if (TimeController.currentTime >= TimeController.contentDuration) {
+      // 播放结束后从头播放（确保有内容时才判断）
+      if (TimeController.contentDuration > 0 && 
+          TimeController.currentTime >= TimeController.contentDuration) {
         TimeController.seek(0);
       }
       
@@ -258,9 +259,7 @@ const PlayerController = {
 
   // 停止播放 - 委托给 CompositorPlayer
   async stop() {
-    const state = this.state;
-    state.isPlaying = false;
-    
+    // 直接委托给 CompositorPlayer，它会处理 TimeController
     if (typeof CompositorPlayer !== 'undefined') {
       CompositorPlayer.stop();
     }

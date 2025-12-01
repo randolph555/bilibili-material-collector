@@ -6,7 +6,9 @@ const CompositorPlayer = {
   mainLoadedBvid: null, // 当前主视频加载的 bvid
   pipElements: {},
   isPlaying: false,
-  animationId: null,
+  // 事件订阅取消函数
+  _unsubscribeTimeUpdate: null,
+  _unsubscribePlaybackEnd: null,
 
   get state() {
     return EditorState;
@@ -238,8 +240,14 @@ const CompositorPlayer = {
     }
 
     this.isPlaying = true;
-    TimelineManager.updatePlayhead();
+    
+    // 先订阅事件，再启动 TimeController
     this.startPlaybackLoop();
+    
+    // 启动 TimeController 的播放循环
+    TimeController.play();
+    
+    TimelineManager.updatePlayhead();
   },
 
   // 暂停 - 同时暂停 TimeController 和视频元素
@@ -261,7 +269,7 @@ const CompositorPlayer = {
   // 停止 - 暂停并回到起点
   stop() {
     this.pause();
-    TimeController.seek(0);
+    // 只调用 seekTo，它内部会处理 TimeController.seek
     this.seekTo(0);
   },
 
@@ -338,7 +346,7 @@ const CompositorPlayer = {
 
   // 播放循环 - 完全由 TimeController 驱动
   startPlaybackLoop() {
-    // 取消之前的订阅
+    // 取消之前的订阅，避免重复订阅
     this._unsubscribeAll();
     
     // 订阅时间更新事件 - TimeController 会驱动时间前进
@@ -354,8 +362,8 @@ const CompositorPlayer = {
       PlayerController.updateTimeDisplay();
     });
     
-    // 启动 TimeController 的播放循环
-    TimeController.play();
+    // 注意：不在这里调用 TimeController.play()
+    // 因为 play() 方法已经负责启动 TimeController
   },
   
   // 取消所有事件订阅
