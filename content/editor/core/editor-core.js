@@ -371,36 +371,6 @@ const EditorCore = {
     return TrackManager.on(TrackManager.Events.TRACKS_CHANGED, callback);
   },
 
-  // ========== 与旧系统桥接 ==========
-
-  /**
-   * 同步到旧的 EditorState（过渡期使用）
-   */
-  syncToLegacyState() {
-    if (typeof EditorState === 'undefined') return;
-    
-    EditorState.tracks = this._tracks;
-    EditorState.playheadTime = TimeController.currentTime;
-    EditorState.contentDuration = TimeController.contentDuration;
-    EditorState.timelineDuration = TimeController.timelineDuration;
-    EditorState.isPlaying = TimeController.isPlaying;
-    EditorState.selectedClipId = this.selectedClipId;
-    EditorState.selectedClipIds = this._selectedClipIds;
-  },
-
-  /**
-   * 从旧的 EditorState 同步（过渡期使用）
-   */
-  syncFromLegacyState() {
-    if (typeof EditorState === 'undefined') return;
-    
-    this._tracks = EditorState.tracks || TrackManager.createEmptyTracks();
-    TimeController._currentTime = EditorState.playheadTime || 0;
-    TimeController._contentDuration = EditorState.contentDuration || 0;
-    TimeController._timelineDuration = EditorState.timelineDuration || 0;
-    TimeController._isPlaying = EditorState.isPlaying || false;
-    this._selectedClipIds = EditorState.selectedClipIds || [];
-  }
 };
 
 // 导出

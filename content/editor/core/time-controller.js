@@ -297,27 +297,6 @@ const TimeController = {
     return `${m}:${s.toString().padStart(2, '0')}`;
   },
 
-  // ========== 与旧系统兼容 ==========
-  
-  /**
-   * 同步到 EditorState（过渡期使用）
-   */
-  syncToLegacyState(state) {
-    state.playheadTime = this._currentTime;
-    state.contentDuration = this._contentDuration;
-    state.timelineDuration = this._timelineDuration;
-    state.isPlaying = this._isPlaying;
-  },
-
-  /**
-   * 从 EditorState 同步（过渡期使用）
-   */
-  syncFromLegacyState(state) {
-    this._currentTime = state.playheadTime || 0;
-    this._contentDuration = state.contentDuration || 0;
-    this._timelineDuration = state.timelineDuration || 0;
-    this._isPlaying = state.isPlaying || false;
-  }
 };
 
 // 导出
