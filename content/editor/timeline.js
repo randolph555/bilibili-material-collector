@@ -8,35 +8,27 @@ const TimelineManager = {
   // 初始化时间轴（用当前视频）
   init() {
     const state = this.state;
-    state.tracks = {
-      video: [[]], // 默认只有1个主轨道
-      audio: [[]]
-    };
-    state.timelineDuration = 0;
-    state.playheadTime = 0;
-    state.history = [];
-    state.historyIndex = -1;
-    state.activeClip = null;
-    state.activeClips = [];
-    state.isPlaying = false;
-    state.selectedTrackIndex = 0;
+    
+    // 初始化核心模块
+    EditorCore.init();
+    
+    // 重置颜色计数器
+    this.colorIndex = 0;
+    TrackManager._colorIndex = 0;
 
     if (state.currentVideo) {
-      const clipId = 'clip-' + Date.now();
-      const initialClip = {
-        id: clipId,
-        video: state.currentVideo,
-        sourceStart: 0,
-        sourceEnd: state.currentVideo.duration,
-        timelineStart: 0,
-        transform: { ...state.TRANSFORM_PRESETS.fullscreen },
-        color: this.generateClipColor(clipId) // 初始化时就分配颜色
-      };
-      state.tracks.video[0].push(initialClip);
+      // 添加初始片段
+      const clip = EditorCore.addClip(
+        state.currentVideo,
+        0,
+        state.currentVideo.duration,
+        0,
+        { transform: { ...state.TRANSFORM_PRESETS.fullscreen } }
+      );
+      
       this.recalculate();
-      this.render(true); // 初始化时立即渲染
-      state.activeClip = initialClip;
-      state.saveHistory();
+      this.render(true);
+      EditorCore._saveHistory();
     }
   },
 
@@ -94,34 +86,17 @@ const TimelineManager = {
   },
 
   // 重新计算时间轴
-  // 重新计算时间轴
-  // 规则：
-  // - contentDuration = 所有轨道中最长片段的结束时间（真正的视频总时长，播放到这里停止）
-  // - timelineDuration = contentDuration + 额外空间（方便用户操作，但不会播放超出内容的部分）
+  // 重新计算时间轴 - 委托给 TimeController
   recalculate() {
     const state = this.state;
     
-    // 1. 计算所有轨道的最大结束时间（这是真正的内容时长）
-    let contentEnd = 0;
-    state.tracks.video.forEach(track => {
-      track.forEach(clip => {
-        const clipEnd = clip.timelineStart + (clip.sourceEnd - clip.sourceStart);
-        contentEnd = Math.max(contentEnd, clipEnd);
-      });
-    });
+    // 使用 TimeController 统一计算时长
+    const result = TimeController.recalculateDuration(state.tracks.video);
     
-    // 2. 保存内容时长（播放结束判断用这个）
-    // 所有轨道最长的那段视频结束 = 整个视频的总时长
-    state.contentDuration = contentEnd || 0;
-    
-    // 3. 时间轴可视范围 = 内容时长 + 额外空间（方便用户拖拽操作）
-    const extraSpace = Math.max(10, contentEnd * 0.2);
-    state.timelineDuration = Math.max(contentEnd + extraSpace, 30);
-
-    // 4. 更新时间轴时长显示（显示真正的内容时长）
+    // 更新时间轴时长显示
     const durationEl = document.getElementById('bm-timeline-duration');
     if (durationEl) {
-      durationEl.textContent = BiliAPI.formatDuration(Math.floor(contentEnd));
+      durationEl.textContent = BiliAPI.formatDuration(Math.floor(result.contentDuration));
     }
   },
 
@@ -612,15 +587,14 @@ const TimelineManager = {
 
   // 更新播放头位置显示
   updatePlayhead() {
-    const state = this.state;
     const playhead = document.getElementById('bm-playhead');
     const trackContent = document.querySelector('.bm-track-content');
     
-    if (!playhead || !trackContent || state.timelineDuration <= 0) return;
+    const duration = TimeController.timelineDuration;
+    if (!playhead || !trackContent || duration <= 0) return;
 
-    // 播放头位置百分比
-    const percent = (state.playheadTime / state.timelineDuration) * 100;
-    // 使用 CSS calc，和轨道内容对齐
+    // 播放头位置百分比 - 使用 TimeController
+    const percent = (TimeController.currentTime / duration) * 100;
     playhead.style.left = `calc(60px + ${percent}%)`;
   },
 
