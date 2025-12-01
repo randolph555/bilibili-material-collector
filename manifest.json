@@ -21,6 +21,9 @@
       "js": [
         "content/storage.js",
         "content/api.js",
+        "content/editor/core/time-controller.js",
+        "content/editor/core/track-manager.js",
+        "content/editor/core/editor-core.js",
         "content/editor/state.js",
         "content/editor/timeline.js",
         "content/editor/subtitle.js",
