@@ -210,6 +210,17 @@ const EditorEvents = {
         }
       });
       
+      // 双击片段恢复默认时长
+      timelineBody.addEventListener('dblclick', (e) => {
+        const clipEl = e.target.closest('.bm-timeline-clip.stretched');
+        if (clipEl) {
+          e.preventDefault();
+          e.stopPropagation();
+          const clipId = clipEl.id;
+          this.resetClipDuration(clipId);
+        }
+      });
+      
       // 时间轴滚轮缩放
       timelineBody.addEventListener('wheel', (e) => {
         if (e.ctrlKey || e.metaKey) {
@@ -256,7 +267,7 @@ const EditorEvents = {
           const clipRect = clipEl.getBoundingClientRect();
           const clickXInClip = e.clientX - clipRect.left;
           const percentInClip = Math.max(0, Math.min(1, clickXInClip / clipRect.width));
-          const clipDuration = clip.sourceEnd - clip.sourceStart;
+          const clipDuration = TrackManager.getClipDuration(clip);
           const timeInClip = percentInClip * clipDuration;
           const timelineTime = clip.timelineStart + timeInClip;
           
@@ -270,7 +281,7 @@ const EditorEvents = {
     TimelineManager.clearSelection();
     EditorUI.updatePropertiesPanel(null);
     
-    // 用轨道内容计算时间（更精确）
+    // 用第一个轨道内容计算时间（轨道内容宽度和时间轴一致）
     const trackContent = document.querySelector('.bm-track-content');
     if (!trackContent) return;
     
@@ -280,6 +291,28 @@ const EditorEvents = {
     const timelineTime = percent * state.timelineDuration;
 
     await PlayerController.seekToTime(timelineTime);
+  },
+  
+  // 恢复片段默认时长（双击拉伸片段时调用）
+  resetClipDuration(clipId) {
+    const state = this.state;
+    const found = state.findClipById(clipId);
+    if (!found) return;
+    
+    const { clip } = found;
+    const sourceDuration = clip.sourceEnd - clip.sourceStart;
+    
+    // 保存历史
+    state.saveHistory();
+    
+    // 恢复默认时长
+    clip.displayDuration = sourceDuration;
+    
+    // 重新计算和渲染
+    TimelineManager.recalculate();
+    TimelineManager.render();
+    
+    MaterialUI.showToast('已恢复默认时长');
   },
 
   // 绑定播放头拖动
@@ -303,6 +336,7 @@ const EditorEvents = {
     const onMouseMove = async (e) => {
       if (!isDragging) return;
       
+      // 用轨道内容计算（宽度和时间轴一致）
       const trackContent = document.querySelector('.bm-track-content');
       if (!trackContent) return;
       
@@ -674,18 +708,19 @@ const EditorEvents = {
     state.saveHistory();
     
     const { clip, trackIndex } = found;
-    const clipDuration = clip.sourceEnd - clip.sourceStart;
+    const clipDuration = TrackManager.getClipDuration(clip);
     
-    // 创建新片段
+    // 创建新片段（复制时保留 displayDuration）
     const newClipId = 'clip-' + Date.now();
     const newClip = {
       id: newClipId,
       video: clip.video,
       sourceStart: clip.sourceStart,
       sourceEnd: clip.sourceEnd,
+      displayDuration: clip.displayDuration,
       timelineStart: trackIndex === 0 ? state.timelineDuration : clip.timelineStart + clipDuration + 0.5,
       transform: clip.transform ? { ...clip.transform } : { ...state.TRANSFORM_PRESETS.fullscreen },
-      color: TimelineManager.generateClipColor(newClipId) // 复制时分配新颜色
+      color: TimelineManager.generateClipColor(newClipId)
     };
     
     state.tracks.video[trackIndex].push(newClip);

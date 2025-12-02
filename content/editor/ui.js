@@ -56,34 +56,38 @@ const EditorUI = {
                 <div class="bm-player-overlay" id="bm-player-overlay">
                   <div class="bm-player-loading">加载中...</div>
                 </div>
-                <!-- 播放器控制层 -->
+                <!-- 播放器控制层 - 只保留全屏按钮 -->
                 <div class="bm-player-controls" id="bm-player-controls">
                   <div class="bm-player-controls-center">
                     <button class="bm-player-btn bm-player-play-btn" id="bm-player-play-btn" title="播放/暂停">
                       <span class="bm-play-icon">▶</span>
                     </button>
                   </div>
-                  <div class="bm-player-controls-bottom">
-                    <div class="bm-player-progress-wrapper" id="bm-player-progress-wrapper">
-                      <div class="bm-player-progress-bar">
-                        <div class="bm-player-progress-played" id="bm-player-progress-played"></div>
-                      </div>
-                    </div>
-                    <div class="bm-player-bottom-row">
-                      <span class="bm-player-time" id="bm-player-time">00:00 / 00:00</span>
-                      <div class="bm-player-bottom-btns">
-                        <button class="bm-player-btn-sm" id="bm-player-mute-btn" title="静音">🔊</button>
-                        <input type="range" class="bm-volume-slider" id="bm-volume-slider" min="0" max="100" value="100">
-                        <button class="bm-player-btn-sm" id="bm-player-fullscreen-btn" title="全屏">⛶</button>
-                      </div>
-                    </div>
-                  </div>
+                  <button class="bm-player-fullscreen-btn" id="bm-player-fullscreen-btn" title="全屏">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>
+                    </svg>
+                  </button>
                 </div>
               </div>
-              <div class="bm-video-info-bar">
-                <span id="bm-current-time">00:00</span>
-                <span>/</span>
-                <span id="bm-total-time">00:00</span>
+              <!-- 播放器下方控制栏 -->
+              <div class="bm-player-bar">
+                <div class="bm-player-progress-wrapper" id="bm-player-progress-wrapper">
+                  <div class="bm-player-progress-bar">
+                    <div class="bm-player-progress-played" id="bm-player-progress-played"></div>
+                  </div>
+                </div>
+                <div class="bm-player-bar-row">
+                  <span class="bm-player-time" id="bm-player-time">00:00 / 00:00</span>
+                  <div class="bm-player-bar-btns">
+                    <button class="bm-player-btn-sm" id="bm-player-mute-btn" title="静音">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/>
+                      </svg>
+                    </button>
+                    <input type="range" class="bm-volume-slider" id="bm-volume-slider" min="0" max="100" value="100">
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -219,8 +223,8 @@ const EditorUI = {
 
     const { clip, trackIndex } = found;
     const video = clip.video;
-    const clipDuration = clip.sourceEnd - clip.sourceStart;
-    const trackName = `V${trackIndex + 1} 视频轨道`;
+    const clipDuration = TrackManager.getClipDuration(clip);
+    const trackName = trackIndex === 0 ? '主轨道' : `轨道 ${trackIndex}`;
     const transform = clip.transform || state.TRANSFORM_PRESETS.fullscreen;
 
     propsContent.innerHTML = `

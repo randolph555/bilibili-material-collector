@@ -87,7 +87,7 @@ const EditorCore = {
       const track = this._tracks.video[0] || [];
       if (track.length > 0) {
         const lastClip = track[track.length - 1];
-        timelineStart = lastClip.timelineStart + (lastClip.sourceEnd - lastClip.sourceStart);
+        timelineStart = lastClip.timelineStart + TrackManager.getClipDuration(lastClip);
       } else {
         timelineStart = 0;
       }
@@ -170,7 +170,7 @@ const EditorCore = {
       const found = TrackManager.findClipById(this._tracks, this._selectedClipIds[0]);
       if (found) {
         const { clip } = found;
-        const clipEnd = clip.timelineStart + (clip.sourceEnd - clip.sourceStart);
+        const clipEnd = TrackManager.getClipEnd(clip);
         if (currentTime >= clip.timelineStart && currentTime < clipEnd) {
           clipToCut = clip;
         }

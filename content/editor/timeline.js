@@ -51,90 +51,42 @@ const TimelineManager = {
     }
   },
 
-  // 添加片段到指定轨道
+  // 添加片段到指定轨道 - 委托给 EditorCore
   addClip(video, sourceStart, sourceEnd, trackIndex = 0) {
     const state = this.state;
-    const clipId = 'clip-' + Date.now();
-
-    // 确保轨道存在
-    while (state.tracks.video.length <= trackIndex) {
-      state.tracks.video.push([]);
-    }
-
-    const track = state.tracks.video[trackIndex];
     
-    // 计算 timelineStart
-    let timelineStart;
-    if (trackIndex === 0) {
-      // 主轨道：追加到末尾
-      if (track.length > 0) {
-        const lastClip = track[track.length - 1];
-        timelineStart = lastClip.timelineStart + (lastClip.sourceEnd - lastClip.sourceStart);
-      } else {
-        timelineStart = 0;
-      }
-    } else {
-      // 叠加轨道：放在播放头位置
-      timelineStart = state.playheadTime;
-    }
-
-    // 非主轨道默认使用画中画预设（居中）
+    // 非主轨道默认使用画中画预设
     const defaultTransform = trackIndex === 0 
       ? { ...state.TRANSFORM_PRESETS.fullscreen }
       : { ...state.TRANSFORM_PRESETS.pipCenter };
 
-    const newClip = {
-      id: clipId,
-      video: video,
-      sourceStart: sourceStart,
-      sourceEnd: sourceEnd,
-      timelineStart: timelineStart,
-      transform: defaultTransform,
-      color: this.generateClipColor(clipId) // 新视频立即分配颜色
-    };
+    const newClip = EditorCore.addClip(video, sourceStart, sourceEnd, trackIndex, {
+      transform: defaultTransform
+    });
     
-    track.push(newClip);
     this.recalculate();
     this.render();
     
     return newClip;
   },
 
-  // 移动片段到新位置
+  // 移动片段到新位置 - 委托给 EditorCore
   moveClip(clipId, newTimelineStart, newTrackIndex = null) {
-    const state = this.state;
-    const found = state.findClipById(clipId);
-    
+    const found = this.state.findClipById(clipId);
     if (!found) return false;
-
-    const { clip, trackIndex, clipIndex } = found;
+    
+    const { trackIndex } = found;
     const trackChanged = newTrackIndex !== null && newTrackIndex !== trackIndex;
     
-    // 如果要移动到不同轨道
-    if (trackChanged) {
-      // 从原轨道移除
-      state.tracks.video[trackIndex].splice(clipIndex, 1);
-      
-      // 确保目标轨道存在
-      while (state.tracks.video.length <= newTrackIndex) {
-        state.tracks.video.push([]);
-      }
-      
-      // 添加到新轨道
-      clip.timelineStart = Math.max(0, newTimelineStart);
-      state.tracks.video[newTrackIndex].push(clip);
-    } else {
-      // 同一轨道内移动 - 所有轨道都可以自由定位
-      clip.timelineStart = Math.max(0, newTimelineStart);
-    }
-
+    const result = EditorCore.moveClip(clipId, newTimelineStart, newTrackIndex);
+    if (!result.success) return false;
+    
     this.recalculate();
     
     // 性能优化：如果轨道没变，只更新单个片段位置
     if (!trackChanged) {
       this.updateClipPosition(clipId);
     } else {
-      // 轨道变了，需要完整渲染
       this.render();
     }
     return true;
@@ -143,70 +95,76 @@ const TimelineManager = {
   // 性能优化：只更新单个片段的位置，不重新渲染整个时间轴
   updateClipPosition(clipId) {
     const state = this.state;
-    const found = state.findClipById(clipId);
-    if (!found) return;
-    
-    const { clip } = found;
-    const clipEl = document.getElementById(clipId);
-    if (!clipEl) return;
-    
     const duration = state.timelineDuration || 1;
-    const clipDuration = clip.sourceEnd - clip.sourceStart;
-    const left = (clip.timelineStart / duration) * 100;
-    const width = (clipDuration / duration) * 100;
     
-    clipEl.style.left = `${left}%`;
-    clipEl.style.width = `${width}%`;
+    // 格式化时长
+    const formatDur = (d) => {
+      const m = Math.floor(d / 60);
+      const s = Math.floor(d % 60);
+      return m > 0 ? `${m}:${s.toString().padStart(2, '0')}` : `${s}s`;
+    };
     
-    // 更新 data 属性
-    clipEl.dataset.timelineStart = clip.timelineStart;
+    // 更新所有片段的位置和宽度（因为 timelineDuration 可能变了）
+    document.querySelectorAll('.bm-timeline-clip').forEach(clipEl => {
+      const id = clipEl.id;
+      if (id.endsWith('-audio')) return; // 跳过音频片段
+      
+      const found = state.findClipById(id);
+      if (!found) return;
+      
+      const { clip } = found;
+      const clipDuration = TrackManager.getClipDuration(clip);
+      const left = (clip.timelineStart / duration) * 100;
+      const width = (clipDuration / duration) * 100;
+      
+      clipEl.style.left = `${left}%`;
+      clipEl.style.width = `${width}%`;
+      clipEl.dataset.timelineStart = clip.timelineStart;
+      
+      // 更新时长标签和拉伸状态（使用原始时长）
+      const originalDuration = clip.originalDuration || (clip.sourceEnd - clip.sourceStart);
+      const isStretched = Math.abs(clipDuration - originalDuration) > 0.1;
+      
+      // 更新拉伸样式
+      clipEl.classList.toggle('stretched', isStretched);
+      
+      // 更新时长标签
+      const label = clipEl.querySelector('.bm-clip-duration-label');
+      if (label) {
+        label.textContent = isStretched 
+          ? `${formatDur(clipDuration)} (源${formatDur(originalDuration)})`
+          : formatDur(clipDuration);
+      }
+    });
     
     this.updatePlayhead();
   },
 
-  // 在播放头位置切割片段（优先切割选中的片段）
+  // 在播放头位置切割片段 - 委托给 EditorCore
   cutAtPlayhead() {
     const state = this.state;
     const playheadTime = state.playheadTime;
     
+    // 查找要切割的片段
     let clipToCut = null;
-    let trackIndex = -1;
-    let sourceTime = 0;
     
     // 优先使用选中的片段
     if (state.selectedClipId) {
       const found = state.findClipById(state.selectedClipId);
       if (found) {
-        const { clip, trackIndex: tIndex } = found;
-        const clipDuration = clip.sourceEnd - clip.sourceStart;
-        const clipEnd = clip.timelineStart + clipDuration;
-        
-        // 检查播放头是否在选中片段范围内
+        const { clip } = found;
+        const clipEnd = TrackManager.getClipEnd(clip);
         if (playheadTime >= clip.timelineStart && playheadTime < clipEnd) {
           clipToCut = clip;
-          trackIndex = tIndex;
-          sourceTime = clip.sourceStart + (playheadTime - clip.timelineStart);
         }
       }
     }
     
-    // 如果没有选中片段或播放头不在选中片段内，则按播放头位置查找
+    // 如果没有选中片段，查找播放头位置的片段
     if (!clipToCut) {
-      for (let i = 0; i < state.tracks.video.length; i++) {
-        const track = state.tracks.video[i];
-        for (const clip of track) {
-          const clipDuration = clip.sourceEnd - clip.sourceStart;
-          const clipEnd = clip.timelineStart + clipDuration;
-          
-          if (playheadTime >= clip.timelineStart && playheadTime < clipEnd) {
-            const offsetInClip = playheadTime - clip.timelineStart;
-            clipToCut = clip;
-            trackIndex = i;
-            sourceTime = clip.sourceStart + offsetInClip;
-            break;
-          }
-        }
-        if (clipToCut) break;
+      const activeClips = TrackManager.getActiveClipsAtTime(state.tracks, playheadTime);
+      if (activeClips.length > 0) {
+        clipToCut = activeClips[0].clip;
       }
     }
     
@@ -214,70 +172,33 @@ const TimelineManager = {
       return { success: false, message: '当前位置没有可切割的片段' };
     }
 
-    if (sourceTime - clipToCut.sourceStart < 0.5 || clipToCut.sourceEnd - sourceTime < 0.5) {
-      return { success: false, message: '切割位置太靠近片段边缘' };
-    }
-
+    // 保存历史（在修改之前）
     state.saveHistory();
-
-    const track = state.tracks.video[trackIndex];
-    const clipIndex = track.findIndex(c => c.id === clipToCut.id);
     
-    // 计算切割后两个片段的时间轴位置
-    const originalTimelineStart = clipToCut.timelineStart;
-    const firstClipDuration = sourceTime - clipToCut.sourceStart;
+    // 使用 TrackManager 切割
+    const result = TrackManager.splitClip(state.tracks, clipToCut.id, playheadTime);
+    if (!result.success) return result;
     
-    // 前半段保持原颜色，后半段分配新颜色
-    const originalColor = clipToCut.color || this.generateClipColor(clipToCut.id);
-    const newClip2Id = 'clip-' + (Date.now() + 1);
-    
-    const newClip1 = {
-      id: 'clip-' + Date.now(),
-      video: clipToCut.video,
-      sourceStart: clipToCut.sourceStart,
-      sourceEnd: sourceTime,
-      timelineStart: originalTimelineStart,
-      transform: clipToCut.transform ? { ...clipToCut.transform } : undefined,
-      color: { ...originalColor } // 前半段保持原颜色
-    };
-
-    const newClip2 = {
-      id: newClip2Id,
-      video: clipToCut.video,
-      sourceStart: sourceTime,
-      sourceEnd: clipToCut.sourceEnd,
-      timelineStart: originalTimelineStart + firstClipDuration,
-      transform: clipToCut.transform ? { ...clipToCut.transform } : undefined,
-      color: this.generateClipColor(newClip2Id) // 后半段分配新颜色
-    };
-
-    track.splice(clipIndex, 1, newClip1, newClip2);
+    // 更新 EditorCore 的 tracks
+    EditorCore._tracks = result.tracks;
 
     this.recalculate();
     this.render();
     this.updateActiveClipFromPlayhead();
 
-    return { 
-      success: true, 
-      message: `已在 ${BiliAPI.formatDuration(Math.floor(sourceTime))} 处切割`,
-      newClip: newClip2
-    };
+    return { success: true, message: result.message, newClip: result.clip2 };
   },
 
-  // 删除片段
+  // 删除片段 - 委托给 EditorCore
   deleteClip(clipId) {
     const state = this.state;
-    const found = state.findClipById(clipId);
-    
-    if (!found) {
+    if (!state.findClipById(clipId)) {
       return { success: false, message: '片段不存在' };
     }
 
-    state.saveHistory();
-
-    const { clip, trackIndex, clipIndex } = found;
-    state.tracks.video[trackIndex].splice(clipIndex, 1);
-
+    const result = EditorCore.removeClip(clipId);
+    if (!result.success) return result;
+    
     if (state.selectedClipId === clipId) {
       state.selectedClipId = null;
     }
@@ -291,48 +212,28 @@ const TimelineManager = {
     this.updateActiveClipFromPlayhead();
     this.render();
 
-    return { 
-      success: true, 
-      message: `已删除片段`,
-      deletedClip: clip
-    };
+    return { success: true, message: `已删除片段`, deletedClip: result.clip };
   },
 
-  // 选中片段（支持多选）
+  // 选中片段（支持多选）- 数据委托给 EditorCore，UI 在这里处理
   selectClip(clipId, trackIndex = null, addToSelection = false) {
     const state = this.state;
     
     if (addToSelection) {
-      // 多选模式（Shift+点击）
-      if (state.selectedClipIds.includes(clipId)) {
-        // 已选中则取消选中
-        state.selectedClipIds = state.selectedClipIds.filter(id => id !== clipId);
-        const clipEl = document.getElementById(clipId);
-        if (clipEl) clipEl.classList.remove('selected');
-        
-        // 更新主选中项
-        state.selectedClipId = state.selectedClipIds[state.selectedClipIds.length - 1] || null;
-      } else {
-        // 添加到选中列表
-        state.selectedClipIds.push(clipId);
-        state.selectedClipId = clipId;
-        const clipEl = document.getElementById(clipId);
-        if (clipEl) clipEl.classList.add('selected');
+      // 多选模式
+      EditorCore.selectClip(clipId, true);
+      const clipEl = document.getElementById(clipId);
+      if (clipEl) {
+        clipEl.classList.toggle('selected', state.selectedClipIds.includes(clipId));
       }
     } else {
-      // 单选模式
-      // 取消之前的选中
+      // 单选模式 - 先清除 UI
       document.querySelectorAll('.bm-timeline-clip.selected').forEach(el => {
         el.classList.remove('selected');
       });
-
-      state.selectedClipId = clipId;
-      state.selectedClipIds = clipId ? [clipId] : [];
-      
-      // 选中新片段
-      const newClip = document.getElementById(clipId);
-      if (newClip) newClip.classList.add('selected');
-      // 注意：跳转逻辑由 handleTrackClick 处理，这里不重复跳转
+      EditorCore.selectClip(clipId, false);
+      const clipEl = document.getElementById(clipId);
+      if (clipEl) clipEl.classList.add('selected');
     }
     
     if (trackIndex !== null) {
@@ -342,15 +243,13 @@ const TimelineManager = {
   
   // 清除所有选中
   clearSelection() {
-    const state = this.state;
     document.querySelectorAll('.bm-timeline-clip.selected').forEach(el => {
       el.classList.remove('selected');
     });
-    state.selectedClipId = null;
-    state.selectedClipIds = [];
+    EditorCore.clearSelection();
   },
   
-  // 删除所有选中的片段
+  // 删除所有选中的片段 - 委托给 EditorCore
   deleteSelectedClips() {
     const state = this.state;
     if (state.selectedClipIds.length === 0) {
@@ -358,15 +257,14 @@ const TimelineManager = {
     }
     
     state.saveHistory();
-    
     let deletedCount = 0;
-    const clipIds = [...state.selectedClipIds]; // 复制数组避免修改时出错
+    const clipIds = [...state.selectedClipIds];
     
+    // 直接操作 EditorCore._tracks
     clipIds.forEach(clipId => {
-      const found = state.findClipById(clipId);
-      if (found) {
-        const { trackIndex, clipIndex } = found;
-        state.tracks.video[trackIndex].splice(clipIndex, 1);
+      const result = TrackManager.removeClip(EditorCore._tracks, clipId);
+      if (result.success) {
+        EditorCore._tracks = result.tracks;
         deletedCount++;
       }
     });
@@ -383,42 +281,7 @@ const TimelineManager = {
     this.updateActiveClipFromPlayhead();
     this.render();
     
-    return { 
-      success: true, 
-      message: `已删除 ${deletedCount} 个片段`,
-      deletedCount
-    };
-  },
-
-  // 时间轴时间 → 原视频时间（只查主轨道）
-  timelineToSource(timelineTime) {
-    const state = this.state;
-    const track = state.tracks.video[0];
-    
-    for (const clip of track) {
-      const clipDuration = clip.sourceEnd - clip.sourceStart;
-      const clipEnd = clip.timelineStart + clipDuration;
-
-      if (timelineTime >= clip.timelineStart && timelineTime < clipEnd) {
-        const offsetInClip = timelineTime - clip.timelineStart;
-        return {
-          clip: clip,
-          sourceTime: clip.sourceStart + offsetInClip
-        };
-      }
-    }
-    
-    if (track.length > 0) {
-      const lastClip = track[track.length - 1];
-      return { clip: lastClip, sourceTime: lastClip.sourceEnd };
-    }
-    return null;
-  },
-
-  // 原视频时间 → 时间轴时间
-  sourceToTimeline(clip, sourceTime) {
-    const offsetInClip = sourceTime - clip.sourceStart;
-    return clip.timelineStart + offsetInClip;
+    return { success: true, message: `已删除 ${deletedCount} 个片段`, deletedCount };
   },
 
   // 获取当前播放头位置对应的片段（主轨道）- 委托给 TrackManager
@@ -450,26 +313,13 @@ const TimelineManager = {
     return sortedClips[currentIndex + 1] || null;
   },
 
-  // 根据播放头位置更新活动片段
+  // 根据播放头位置更新活动片段 - 使用 TrackManager
   updateActiveClipFromPlayhead() {
     const state = this.state;
-    const track = state.tracks.video[0];
-    
-    if (track.length === 0) {
-      state.activeClip = null;
-      return;
-    }
-    
     if (state.playheadTime > state.timelineDuration) {
       state.playheadTime = Math.max(0, state.timelineDuration - 0.01);
     }
-    
-    const result = this.timelineToSource(state.playheadTime);
-    if (result) {
-      state.activeClip = result.clip;
-    } else {
-      state.activeClip = track[0];
-    }
+    // activeClip 的 getter 已经自动从 EditorCore.getActiveClips() 获取
   },
 
   // 设置时间轴缩放
@@ -507,7 +357,7 @@ const TimelineManager = {
     
     // 设置刻度尺宽度
     if (ruler) {
-      ruler.style.width = `calc(${zoomWidth} - 60px)`;
+      ruler.style.width = `calc(${zoomWidth} - 70px)`;
     }
   },
 
@@ -521,7 +371,7 @@ const TimelineManager = {
 
     // 播放头位置百分比 - 使用 TimeController
     const percent = (TimeController.currentTime / duration) * 100;
-    playhead.style.left = `calc(60px + ${percent}%)`;
+    playhead.style.left = `calc(70px + ${percent}%)`;
   },
 
   // 生成时间轴刻度 - 像手表刻度
@@ -559,7 +409,7 @@ const TimelineManager = {
     let html = '';
 
     track.forEach(clip => {
-      const clipDuration = clip.sourceEnd - clip.sourceStart;
+      const clipDuration = TrackManager.getClipDuration(clip);
       const left = (clip.timelineStart / duration) * 100;
       const width = (clipDuration / duration) * 100;
       const isSelected = clip.id === state.selectedClipId;
@@ -574,6 +424,13 @@ const TimelineManager = {
           const height = 20 + (seed % 60);
           waveHtml += `<div class="bm-wave-bar" style="height: ${height}%;"></div>`;
         }
+        
+        // 格式化时长
+        const formatDur = (d) => {
+          const m = Math.floor(d / 60);
+          const s = Math.floor(d % 60);
+          return m > 0 ? `${m}:${s.toString().padStart(2, '0')}` : `${s}s`;
+        };
 
         html += `
           <div class="bm-timeline-clip bm-audio-clip ${isSelected ? 'selected' : ''}"
@@ -583,6 +440,7 @@ const TimelineManager = {
                draggable="true"
                style="left: ${left}%; width: ${width}%;">
             <div class="bm-clip-waveform">${waveHtml}</div>
+            <span class="bm-clip-duration-label">${formatDur(clipDuration)}</span>
           </div>
         `;
       } else {
@@ -594,9 +452,27 @@ const TimelineManager = {
           clip.color = this.generateClipColor(clip.id);
         }
         const { hue, saturation, lightness } = clip.color;
+        
+        // 检查是否被拉伸（使用原始时长）
+        const originalDuration = clip.originalDuration || (clip.sourceEnd - clip.sourceStart);
+        const displayDuration = clipDuration;
+        const isStretched = Math.abs(displayDuration - originalDuration) > 0.1;
+        
+        // 格式化时长显示
+        const formatDur = (d) => {
+          const m = Math.floor(d / 60);
+          const s = Math.floor(d % 60);
+          return m > 0 ? `${m}:${s.toString().padStart(2, '0')}` : `${s}s`;
+        };
+        
+        // 时长标签：显示时长 / 原始时长（如果不同）
+        let durationLabel = formatDur(displayDuration);
+        if (isStretched) {
+          durationLabel = `${formatDur(displayDuration)} (源${formatDur(originalDuration)})`;
+        }
 
         html += `
-          <div class="bm-timeline-clip ${isSelected ? 'selected' : ''} ${isPip ? 'bm-pip-clip' : ''}"
+          <div class="bm-timeline-clip ${isSelected ? 'selected' : ''} ${isPip ? 'bm-pip-clip' : ''} ${isStretched ? 'stretched' : ''}"
                id="${clip.id}"
                data-bvid="${clip.video.bvid}"
                data-track-index="${trackIndex}"
@@ -605,9 +481,10 @@ const TimelineManager = {
                data-source-end="${clip.sourceEnd}"
                draggable="true"
                style="left: ${left}%; width: ${width}%; background: linear-gradient(135deg, hsl(${hue}, ${saturation}%, ${lightness + 8}%), hsl(${hue}, ${saturation}%, ${lightness}%));"
-               title="${clip.video.title}">
-            <div class="bm-clip-drag-handle bm-clip-handle-left"></div>
-            <div class="bm-clip-drag-handle bm-clip-handle-right"></div>
+               title="${clip.video.title} | ${durationLabel}${isStretched ? ' (双击恢复)' : ''}">
+            <div class="bm-clip-drag-handle bm-clip-handle-left" draggable="false"></div>
+            <span class="bm-clip-duration-label">${durationLabel}</span>
+            <div class="bm-clip-drag-handle bm-clip-handle-right" draggable="false"></div>
           </div>
         `;
       }
@@ -685,7 +562,7 @@ const TimelineManager = {
     this.bindDragEvents();
   },
   
-  // 动态渲染视频轨道 DOM
+  // 动态渲染轨道 DOM
   renderVideoTracks() {
     const state = this.state;
     const container = document.getElementById('bm-video-tracks-container');
@@ -699,12 +576,14 @@ const TimelineManager = {
     if (existingTracks.length !== neededTracks) {
       let html = '';
       for (let i = 0; i < neededTracks; i++) {
-        const trackName = `V${i + 1} 视频轨道`;
+        // 主轨道 vs 子轨道命名
+        const trackName = i === 0 ? '主轨道' : `轨道 ${i}`;
+        const isMain = i === 0;
         html += `
-          <div class="bm-timeline-track ${i > 0 ? 'bm-overlay-track' : ''}" data-track="video-${i}">
+          <div class="bm-timeline-track ${isMain ? 'bm-main-track' : 'bm-sub-track'}" data-track="video-${i}">
             <div class="bm-track-header">
               <span>${trackName}</span>
-              ${i > 0 ? `<button class="bm-track-remove-btn" data-track-index="${i}" title="删除轨道">×</button>` : ''}
+              ${!isMain ? `<button class="bm-track-remove-btn" data-track-index="${i}" title="删除轨道">×</button>` : ''}
             </div>
             <div class="bm-track-content" id="bm-video-track-${i}" data-track-index="${i}"></div>
           </div>
@@ -723,78 +602,51 @@ const TimelineManager = {
     }
   },
   
-  // 添加新视频轨道
+  // 添加新轨道 - 委托给 EditorCore
   addTrack() {
-    const state = this.state;
-    state.saveHistory();
-    const newIndex = state.addVideoTrack();
+    const newIndex = EditorCore.addVideoTrack();
     this.render();
-    MaterialUI.showToast(`已添加视频轨道 ${newIndex + 1}`);
+    MaterialUI.showToast(`已添加轨道 ${newIndex}`);
     return newIndex;
   },
   
-  // 删除视频轨道
+  // 删除轨道 - 委托给 EditorCore
   removeTrack(trackIndex) {
-    const state = this.state;
     if (trackIndex === 0) {
       MaterialUI.showToast('不能删除主轨道', 'error');
       return false;
     }
     
-    const track = state.tracks.video[trackIndex];
+    const track = this.state.tracks.video[trackIndex];
     if (track && track.length > 0) {
-      if (!confirm(`轨道 V${trackIndex + 1} 上有 ${track.length} 个片段，确定删除吗？`)) {
+      if (!confirm(`轨道 ${trackIndex} 上有 ${track.length} 个元素，确定删除吗？`)) {
         return false;
       }
     }
     
-    state.saveHistory();
-    state.removeVideoTrack(trackIndex);
+    const result = EditorCore.removeVideoTrack(trackIndex);
+    if (!result.success) return false;
+    
     this.recalculate();
     this.render();
-    MaterialUI.showToast(`已删除 V${trackIndex + 1} 视频轨道`);
+    MaterialUI.showToast(`已删除轨道 ${trackIndex}`);
     return true;
   },
 
-  // 绑定拖拽事件（使用事件委托优化性能）
+  // 绑定交互事件
   bindDragEvents() {
     const container = document.getElementById('bm-video-tracks-container');
-    if (!container || container._dragEventsBound) return;
+    if (!container) return;
     
-    // 使用事件委托，只在容器上绑定一次
-    container.addEventListener('dragstart', (e) => {
-      const clipEl = e.target.closest('.bm-timeline-clip[draggable="true"]');
-      if (clipEl) this.onDragStart(e);
-    });
+    // 拖拽事件委托给 TimelineDrag
+    TimelineDrag.bindEvents(container);
     
-    container.addEventListener('dragend', (e) => {
-      const clipEl = e.target.closest('.bm-timeline-clip');
-      if (clipEl) this.onDragEnd(e);
-    });
-    
-    container.addEventListener('dragover', (e) => {
-      const trackEl = e.target.closest('.bm-track-content');
-      if (trackEl) this.onDragOver(e);
-    });
-    
-    container.addEventListener('drop', (e) => {
-      const trackEl = e.target.closest('.bm-track-content');
-      if (trackEl) this.onDrop(e);
-    });
-    
-    container.addEventListener('dragleave', (e) => {
-      const trackEl = e.target.closest('.bm-track-content');
-      if (trackEl) this.onDragLeave(e);
-    });
-    
-    container._dragEventsBound = true;
-    
-    // 裁剪手柄事件也使用委托
-    this.bindTrimHandlesDelegate(container);
+    // 裁剪手柄事件
+    this.bindTrimEvents(container);
   },
   
-  // 使用事件委托绑定裁剪手柄
-  bindTrimHandlesDelegate(container) {
+  // 绑定裁剪手柄事件
+  bindTrimEvents(container) {
     if (container._trimEventsBound) return;
     
     container.addEventListener('mousedown', (e) => {
@@ -833,6 +685,7 @@ const TimelineManager = {
       originalSourceStart: clip.sourceStart,
       originalSourceEnd: clip.sourceEnd,
       originalTimelineStart: clip.timelineStart,
+      originalDisplayDuration: clip.displayDuration || (clip.sourceEnd - clip.sourceStart),
       minDuration: 0.5 // 最小片段时长
     };
     
@@ -851,11 +704,10 @@ const TimelineManager = {
     const tm = TimelineManager;
     if (!tm.trimState) return;
     
-    const { clipId, clip, trackIndex, isLeft, trackRect, originalSourceStart, originalSourceEnd, originalTimelineStart, minDuration } = tm.trimState;
+    const { clipId, clip, trackIndex, isLeft, trackRect, originalSourceStart, originalSourceEnd, originalTimelineStart, originalDisplayDuration, minDuration } = tm.trimState;
     const state = tm.state;
     
     // 计算鼠标在轨道中的位置
-    // trackRect.width 已经是缩放后的实际宽度，代表整个 timelineDuration
     const mouseX = e.clientX - trackRect.left;
     const percent = Math.max(0, Math.min(1, mouseX / trackRect.width));
     let mouseTime = percent * state.timelineDuration;
@@ -872,37 +724,34 @@ const TimelineManager = {
       }
     }
     
-    const originalDuration = originalSourceEnd - originalSourceStart;
-    
     if (isLeft) {
-      // 拖拽左边缘 - 调整入点
-      if (trackIndex === 0) {
-        // 主轨道：调整 sourceStart，timelineStart 会自动重算
-        const maxSourceStart = originalSourceEnd - minDuration;
-        const timeDelta = mouseTime - originalTimelineStart;
-        let newSourceStart = originalSourceStart + timeDelta;
-        newSourceStart = Math.max(0, Math.min(maxSourceStart, newSourceStart));
-        clip.sourceStart = newSourceStart;
-      } else {
-        // 叠加轨道：同时调整 sourceStart 和 timelineStart
-        const maxTimelineStart = originalTimelineStart + originalDuration - minDuration;
-        let newTimelineStart = Math.max(0, Math.min(maxTimelineStart, mouseTime));
-        const timeDelta = newTimelineStart - originalTimelineStart;
-        clip.timelineStart = newTimelineStart;
-        clip.sourceStart = Math.min(originalSourceEnd - minDuration, originalSourceStart + timeDelta);
-      }
-    } else {
-      // 拖拽右边缘 - 调整出点
-      const clipEnd = trackIndex === 0 ? originalTimelineStart + originalDuration : clip.timelineStart + (clip.sourceEnd - clip.sourceStart);
-      const timeDelta = mouseTime - clipEnd;
-      let newSourceEnd = originalSourceEnd + timeDelta;
+      // 拖拽左边缘 - 调整入点和显示时长
+      const newTimelineStart = Math.max(0, mouseTime);
+      const timeDelta = newTimelineStart - originalTimelineStart;
       
-      // 限制范围
-      const minSourceEnd = clip.sourceStart + minDuration;
-      const maxSourceEnd = clip.video.duration || originalSourceEnd + 60; // 不能超过原视频时长
-      newSourceEnd = Math.max(minSourceEnd, Math.min(maxSourceEnd, newSourceEnd));
-      clip.sourceEnd = newSourceEnd;
+      // 更新 timelineStart 和 displayDuration
+      clip.timelineStart = newTimelineStart;
+      clip.displayDuration = Math.max(minDuration, originalDisplayDuration - timeDelta);
+      
+      // 保存原始时长（首次裁剪时记录）
+      if (clip.originalDuration == null) {
+        clip.originalDuration = clip.sourceEnd - clip.sourceStart;
+      }
+      // 注意：不再修改 sourceStart，保持原始源范围
+    } else {
+      // 拖拽右边缘 - 调整显示时长（可以拉长超过源时长，循环播放）
+      const newDisplayDuration = Math.max(minDuration, mouseTime - clip.timelineStart);
+      clip.displayDuration = newDisplayDuration;
+      
+      // 保存原始时长（首次裁剪时记录）
+      if (clip.originalDuration == null) {
+        clip.originalDuration = clip.sourceEnd - clip.sourceStart;
+      }
+      // 注意：不再修改 sourceEnd，保持原始源范围用于循环播放
     }
+    
+    // 显示时间提示
+    tm.showTrimTooltip(clip, mouseTime);
     
     // 重新计算
     tm.recalculate();
@@ -927,8 +776,9 @@ const TimelineManager = {
     const { clipId, originalSourceStart, originalSourceEnd, originalTimelineStart } = tm.trimState;
     const found = tm.state.findClipById(clipId);
     
-    // 隐藏吸附指示器
+    // 隐藏吸附指示器和时间提示
     tm.hideSnapIndicator();
+    tm.hideTrimTooltip();
     
     // 检查是否有实际变化
     if (found) {
@@ -960,204 +810,68 @@ const TimelineManager = {
     tm.updateActiveClipFromPlayhead();
   },
 
-  // 拖拽开始
-  onDragStart(e) {
-    const clipEl = e.target.closest('.bm-timeline-clip');
-    if (!clipEl) return;
-
-    let clipId = clipEl.id;
-    if (clipId.endsWith('-audio')) {
-      clipId = clipEl.dataset.clipId;
-    }
-
-    const trackIndex = parseInt(clipEl.dataset.trackIndex) || 0;
-    
-    e.dataTransfer.setData('text/plain', JSON.stringify({
-      clipId,
-      trackIndex,
-      offsetX: e.offsetX
-    }));
-    
-    e.dataTransfer.effectAllowed = 'move';
-    clipEl.classList.add('dragging');
-    
-    this.state.dragState = { clipId, trackIndex };
-  },
-
-  // 拖拽结束
-  onDragEnd(e) {
-    const clipEl = e.target.closest('.bm-timeline-clip');
-    if (clipEl) {
-      clipEl.classList.remove('dragging');
+  // 显示裁剪时间提示
+  showTrimTooltip(clip, mouseTime) {
+    let tooltip = document.getElementById('bm-trim-tooltip');
+    if (!tooltip) {
+      tooltip = document.createElement('div');
+      tooltip.id = 'bm-trim-tooltip';
+      tooltip.className = 'bm-trim-tooltip';
+      document.body.appendChild(tooltip);
     }
     
-    document.querySelectorAll('.bm-track-content').forEach(el => {
-      el.classList.remove('drag-over');
-    });
+    const displayDuration = TrackManager.getClipDuration(clip);
+    const sourceDuration = clip.sourceEnd - clip.sourceStart;
+    const isLooping = displayDuration > sourceDuration;
     
-    this.state.dragState = null;
-  },
-
-  // 拖拽经过
-  onDragOver(e) {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
+    // 格式化时间
+    const formatTime = (t) => {
+      const m = Math.floor(t / 60);
+      const s = Math.floor(t % 60);
+      const ms = Math.floor((t % 1) * 10);
+      return `${m}:${s.toString().padStart(2, '0')}.${ms}`;
+    };
     
-    const trackEl = e.target.closest('.bm-track-content');
-    if (trackEl) {
-      trackEl.classList.add('drag-over');
+    // 显示详细信息帮助理解
+    let text = `显示: ${formatTime(displayDuration)} | 源: ${formatTime(sourceDuration)}`;
+    if (isLooping) {
+      text += ` | 循环 ${(displayDuration / sourceDuration).toFixed(1)}x`;
     }
-  },
-
-  // 拖拽离开
-  onDragLeave(e) {
-    const trackEl = e.target.closest('.bm-track-content');
-    if (trackEl) {
-      trackEl.classList.remove('drag-over');
-    }
-  },
-
-  // 放置
-  onDrop(e) {
-    e.preventDefault();
     
-    const trackEl = e.target.closest('.bm-track-content');
-    if (!trackEl) return;
-
-    trackEl.classList.remove('drag-over');
-    this.hideSnapIndicator();
-
-    try {
-      const data = JSON.parse(e.dataTransfer.getData('text/plain'));
-      const { clipId, trackIndex: sourceTrackIndex, offsetX } = data;
-      
-      // 计算新的时间轴位置
-      // 轨道宽度 = timelineDuration * timelineZoom（CSS 中设置的）
-      // 所以：时间 = (鼠标位置 / 轨道宽度) * timelineDuration * timelineZoom / timelineZoom
-      //          = (鼠标位置 / 轨道宽度) * timelineDuration
-      const rect = trackEl.getBoundingClientRect();
-      const dropX = e.clientX - rect.left - (offsetX || 0);
-      const percent = Math.max(0, dropX / rect.width);
-      let newTimelineStart = percent * this.state.timelineDuration;
-
-      // 获取目标轨道索引
-      const targetTrackIndex = parseInt(trackEl.dataset.trackIndex) || 0;
-      
-      // 应用吸附
-      if (this.state.snapEnabled) {
-        const found = this.state.findClipById(clipId);
-        if (found) {
-          const clipDuration = found.clip.sourceEnd - found.clip.sourceStart;
-          newTimelineStart = this.applySnap(newTimelineStart, clipDuration, clipId, targetTrackIndex);
-        }
-      }
-
-      // 保存历史
-      this.state.saveHistory();
-
-      // 移动片段
-      this.moveClip(clipId, newTimelineStart, targetTrackIndex);
-
-    } catch (err) {
-      console.error('拖放失败:', err);
+    tooltip.textContent = text;
+    tooltip.style.display = 'block';
+    
+    // 跟随鼠标
+    const rect = document.getElementById('bm-video-tracks-container')?.getBoundingClientRect();
+    if (rect) {
+      tooltip.style.left = `${event.clientX}px`;
+      tooltip.style.top = `${rect.top - 30}px`;
     }
   },
   
-  // 获取所有吸附点
+  // 隐藏裁剪时间提示
+  hideTrimTooltip() {
+    const tooltip = document.getElementById('bm-trim-tooltip');
+    if (tooltip) {
+      tooltip.style.display = 'none';
+    }
+  },
+
+  // 吸附相关方法委托给 TimelineDrag（保持原接口兼容）
   getSnapPoints(excludeClipId = null, trackIndex = null) {
-    const state = this.state;
-    const points = [];
-    
-    // 添加播放头位置
-    points.push({ time: state.playheadTime, type: 'playhead' });
-    
-    // 添加时间轴起点和终点
-    points.push({ time: 0, type: 'start' });
-    points.push({ time: state.timelineDuration, type: 'end' });
-    
-    // 添加所有片段的边缘
-    state.tracks.video.forEach((track, tIndex) => {
-      track.forEach(clip => {
-        if (clip.id === excludeClipId) return;
-        
-        const clipEnd = clip.timelineStart + (clip.sourceEnd - clip.sourceStart);
-        points.push({ time: clip.timelineStart, type: 'clip-start', trackIndex: tIndex });
-        points.push({ time: clipEnd, type: 'clip-end', trackIndex: tIndex });
-      });
-    });
-    
-    return points;
+    return TimelineDrag.getSnapPoints(excludeClipId);
   },
   
-  // 应用吸附
-  applySnap(timelineStart, clipDuration, excludeClipId, trackIndex) {
-    const state = this.state;
-    if (!state.snapEnabled) return timelineStart;
-    
-    const snapPoints = this.getSnapPoints(excludeClipId, trackIndex);
-    const clipEnd = timelineStart + clipDuration;
-    const threshold = state.snapThreshold;
-    
-    let snappedStart = timelineStart;
-    let minDiff = threshold;
-    let snapType = null;
-    
-    // 检查片段起点的吸附
-    for (const point of snapPoints) {
-      const diff = Math.abs(timelineStart - point.time);
-      if (diff < minDiff) {
-        minDiff = diff;
-        snappedStart = point.time;
-        snapType = 'start-to-' + point.type;
-      }
-    }
-    
-    // 检查片段终点的吸附
-    for (const point of snapPoints) {
-      const diff = Math.abs(clipEnd - point.time);
-      if (diff < minDiff) {
-        minDiff = diff;
-        snappedStart = point.time - clipDuration;
-        snapType = 'end-to-' + point.type;
-      }
-    }
-    
-    // 显示吸附指示器
-    if (snapType) {
-      this.showSnapIndicator(snappedStart, clipDuration, snapType);
-    }
-    
-    return Math.max(0, snappedStart);
+  applySnap(timelineStart, clipDuration, excludeClipId, trackIndex = null) {
+    return TimelineDrag.applySnap(timelineStart, clipDuration, excludeClipId);
   },
   
-  // 显示吸附指示器
-  showSnapIndicator(timelineStart, clipDuration, snapType) {
-    let indicator = document.getElementById('bm-snap-indicator');
-    if (!indicator) {
-      indicator = document.createElement('div');
-      indicator.id = 'bm-snap-indicator';
-      indicator.className = 'bm-snap-indicator';
-      document.querySelector('.bm-timeline-body')?.appendChild(indicator);
-    }
-    
-    const state = this.state;
-    const percent = (timelineStart / state.timelineDuration) * 100 * state.timelineZoom;
-    
-    indicator.style.left = `calc(60px + (100% - 60px) * ${percent / 100})`;
-    indicator.style.display = 'block';
-    indicator.classList.add('active');
-    
-    // 短暂显示后隐藏
-    setTimeout(() => this.hideSnapIndicator(), 500);
+  showSnapIndicator(timelineStart, clipDuration = 0, snapType = null) {
+    TimelineDrag.showSnapIndicator(timelineStart);
   },
   
-  // 隐藏吸附指示器
   hideSnapIndicator() {
-    const indicator = document.getElementById('bm-snap-indicator');
-    if (indicator) {
-      indicator.classList.remove('active');
-      indicator.style.display = 'none';
-    }
+    TimelineDrag.hideSnapIndicator();
   }
 };
 

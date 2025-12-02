@@ -219,7 +219,10 @@ const TimeController = {
     
     tracks.forEach(track => {
       track.forEach(clip => {
-        const clipEnd = clip.timelineStart + (clip.sourceEnd - clip.sourceStart);
+        // 使用 displayDuration（兼容旧数据）
+        // 用 != null 避免 displayDuration 为 0 时的问题
+        const clipDuration = clip.displayDuration != null ? clip.displayDuration : (clip.sourceEnd - clip.sourceStart);
+        const clipEnd = clip.timelineStart + clipDuration;
         maxEnd = Math.max(maxEnd, clipEnd);
       });
     });

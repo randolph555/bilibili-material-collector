@@ -25,6 +25,7 @@
         "content/editor/core/track-manager.js",
         "content/editor/core/editor-core.js",
         "content/editor/state.js",
+        "content/editor/timeline-drag.js",
         "content/editor/timeline.js",
         "content/editor/subtitle.js",
         "content/editor/media.js",

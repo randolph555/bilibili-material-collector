@@ -2,6 +2,21 @@
 
 ## 已完成 ✅
 
+### 🏗️ 架构重构 (core/)
+**核心模块：**
+- [x] TimeController - 统一时间控制（播放状态、时间同步）
+- [x] TrackManager - 轨道数据管理（片段CRUD、查询、颜色）
+- [x] EditorCore - 整合层（协调时间和轨道、撤销/重做）
+- [x] EditorState - 兼容层（代理到核心模块，保持旧代码兼容）
+
+**timeline.js 重构：**
+- [x] 业务逻辑委托给核心模块（addClip, moveClip, deleteClip, cutAtPlayhead）
+- [x] 轨道操作委托（addTrack, removeTrack）
+- [x] 选择操作委托（selectClip, clearSelection）
+- [x] 查询方法委托（getCurrentClip, getActiveClipsAtTime）
+- [x] 删除冗余代码（timelineToSource, sourceToTimeline）
+- [x] 代码行数：1165 → 986（减少 15%）
+
 ### 🎬 Canvas 合成播放器 (compositor.js)
 **核心设计：**
 - 使用 Canvas 2D 渲染，完全自主控制

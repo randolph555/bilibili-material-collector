@@ -127,21 +127,47 @@ const TrackManager = {
     return { success: true, tracks: newTracks };
   },
 
+  // ========== 元素类型 ==========
+  ElementTypes: {
+    VIDEO: 'video',
+    IMAGE: 'image',
+    TEXT: 'text',
+    STICKER: 'sticker'
+  },
+
   // ========== 片段操作 ==========
 
   /**
-   * 创建新片段
+   * 创建新片段（元素）
+   * 
+   * @param {Object} source - 源数据（视频对象、图片URL、文字内容等）
+   * @param {number} sourceStart - 源起始时间（视频用）
+   * @param {number} sourceEnd - 源结束时间（视频用）
+   * @param {number} timelineStart - 时间轴起始位置
+   * @param {Object} options - 可选参数
+   * @param {string} options.type - 元素类型：video/image/text/sticker
+   * @param {number} options.displayDuration - 显示时长（可以和源时长不同，用于拉伸）
    */
-  createClip(video, sourceStart, sourceEnd, timelineStart, options = {}) {
+  createClip(source, sourceStart, sourceEnd, timelineStart, options = {}) {
     const clipId = this.generateClipId();
+    const type = options.type || this.ElementTypes.VIDEO;
+    const sourceDuration = sourceEnd - sourceStart;
+    
     return {
       id: clipId,
-      video: video,
+      type: type,
+      // 视频相关
+      video: type === this.ElementTypes.VIDEO ? source : null,
       sourceStart: sourceStart,
       sourceEnd: sourceEnd,
+      // 通用
+      source: source, // 统一的源数据引用
       timelineStart: timelineStart,
+      displayDuration: options.displayDuration || sourceDuration, // 显示时长，默认等于源时长
       transform: options.transform || null,
-      color: options.color || this.generateClipColor()
+      color: options.color || this.generateClipColor(),
+      // 拉伸模式（视频用）：'loop' 循环 | 'stretch' 变速 | 'freeze' 定格
+      stretchMode: options.stretchMode || 'loop'
     };
   },
 
@@ -250,7 +276,7 @@ const TrackManager = {
     if (!found) return { success: false, tracks, message: '片段不存在' };
     
     const { clip, trackIndex, clipIndex } = found;
-    const clipDuration = clip.sourceEnd - clip.sourceStart;
+    const clipDuration = this.getClipDuration(clip);
     const clipEnd = clip.timelineStart + clipDuration;
     
     // 检查切割点是否在片段范围内
@@ -258,8 +284,11 @@ const TrackManager = {
       return { success: false, tracks, message: '切割点不在片段范围内' };
     }
     
-    // 计算源视频中的切割点
-    const sourceTime = clip.sourceStart + (splitTime - clip.timelineStart);
+    // 计算源视频中的切割点（考虑拉伸比例）
+    const sourceDuration = clip.sourceEnd - clip.sourceStart;
+    const ratio = sourceDuration / clipDuration; // 源时长/显示时长
+    const offsetInClip = splitTime - clip.timelineStart;
+    const sourceTime = clip.sourceStart + (offsetInClip * ratio);
     
     // 检查是否太靠近边缘
     if (sourceTime - clip.sourceStart < 0.5 || clip.sourceEnd - sourceTime < 0.5) {
@@ -268,12 +297,17 @@ const TrackManager = {
     
     const newTracks = this._cloneTracks(tracks);
     
+    // 计算切割后的显示时长
+    const duration1 = offsetInClip;
+    const duration2 = clipDuration - offsetInClip;
+    
     // 创建两个新片段
     const clip1 = {
       ...clip,
       id: this.generateClipId(),
       sourceEnd: sourceTime,
-      color: clip.color // 保持原颜色
+      displayDuration: duration1,
+      color: clip.color
     };
     
     const clip2 = {
@@ -281,7 +315,8 @@ const TrackManager = {
       id: this.generateClipId(),
       sourceStart: sourceTime,
       timelineStart: splitTime,
-      color: this.generateClipColor() // 新颜色
+      displayDuration: duration2,
+      color: this.generateClipColor()
     };
     
     // 替换原片段
@@ -299,6 +334,22 @@ const TrackManager = {
   },
 
   // ========== 查询方法 ==========
+
+  /**
+   * 获取片段的显示时长（兼容新旧数据）
+   */
+  getClipDuration(clip) {
+    // 优先使用 displayDuration，兼容旧数据用 sourceEnd - sourceStart
+    // 使用 != null 而不是 ||，避免 displayDuration 为 0 时的问题
+    return clip.displayDuration != null ? clip.displayDuration : (clip.sourceEnd - clip.sourceStart);
+  },
+
+  /**
+   * 获取片段在时间轴上的结束时间
+   */
+  getClipEnd(clip) {
+    return clip.timelineStart + this.getClipDuration(clip);
+  },
 
   /**
    * 根据ID查找片段
@@ -326,9 +377,10 @@ const TrackManager = {
     
     tracks.video.forEach((track, trackIndex) => {
       for (const clip of track) {
-        const clipEnd = clip.timelineStart + (clip.sourceEnd - clip.sourceStart);
+        const clipEnd = this.getClipEnd(clip);
         if (time >= clip.timelineStart && time < clipEnd) {
-          const sourceTime = clip.sourceStart + (time - clip.timelineStart);
+          // 计算源时间（考虑拉伸和循环）
+          const sourceTime = this.getSourceTimeAtPlayhead(clip, time);
           activeClips.push({
             clip,
             trackIndex,
@@ -343,6 +395,29 @@ const TrackManager = {
   },
 
   /**
+   * 获取播放头位置对应的源时间（处理循环播放）
+   */
+  getSourceTimeAtPlayhead(clip, playheadTime) {
+    const offsetInClip = playheadTime - clip.timelineStart;
+    const sourceDuration = clip.sourceEnd - clip.sourceStart;
+    const displayDuration = this.getClipDuration(clip);
+    
+    // 如果没有拉伸或刚好等于源时长，直接计算
+    if (displayDuration <= sourceDuration) {
+      const ratio = sourceDuration / displayDuration;
+      return clip.sourceStart + (offsetInClip * ratio);
+    }
+    
+    // 拉伸了（displayDuration > sourceDuration），需要循环播放
+    // 在 sourceStart 到 sourceEnd 范围内循环
+    const loopOffset = offsetInClip % sourceDuration;
+    const sourceTime = clip.sourceStart + loopOffset;
+    
+    // 确保在有效范围内
+    return Math.max(clip.sourceStart, Math.min(clip.sourceEnd - 0.01, sourceTime));
+  },
+
+  /**
    * 获取指定轨道在指定时间的片段
    */
   getClipAtTime(tracks, trackIndex, time) {
@@ -350,7 +425,7 @@ const TrackManager = {
     if (!track) return null;
     
     for (const clip of track) {
-      const clipEnd = clip.timelineStart + (clip.sourceEnd - clip.sourceStart);
+      const clipEnd = this.getClipEnd(clip);
       if (time >= clip.timelineStart && time < clipEnd) {
         return clip;
       }
@@ -378,7 +453,7 @@ const TrackManager = {
     let maxEnd = 0;
     tracks.video.forEach(track => {
       track.forEach(clip => {
-        const clipEnd = clip.timelineStart + (clip.sourceEnd - clip.sourceStart);
+        const clipEnd = this.getClipEnd(clip);
         maxEnd = Math.max(maxEnd, clipEnd);
       });
     });
@@ -391,11 +466,11 @@ const TrackManager = {
   getSnapPoints(tracks, excludeClipId = null) {
     const points = [{ time: 0, type: 'start' }];
     
-    tracks.video.forEach((track, trackIndex) => {
+    tracks.video.forEach((track) => {
       track.forEach(clip => {
         if (clip.id === excludeClipId) return;
         
-        const clipEnd = clip.timelineStart + (clip.sourceEnd - clip.sourceStart);
+        const clipEnd = this.getClipEnd(clip);
         points.push({ time: clip.timelineStart, type: 'clipStart', clipId: clip.id });
         points.push({ time: clipEnd, type: 'clipEnd', clipId: clip.id });
       });

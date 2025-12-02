@@ -16,7 +16,7 @@ const EditorState = {
   // ========== UI 配置 ==========
   timelineZoom: 1,
   snapEnabled: true,
-  snapThreshold: 0.5,
+  snapThreshold: 1.0, // 吸附阈值（秒），增大更容易吸附
   
   // ========== UI 状态 ==========
   isInitialLoad: true,
@@ -151,7 +151,7 @@ const EditorState = {
     this.mediaCache = {};
     this.timelineZoom = 1;
     this.snapEnabled = true;
-    this.snapThreshold = 0.5;
+    this.snapThreshold = 1.0;
     this.isInitialLoad = true;
     this.trackEventsBindded = false;
     this.subtitleData = null;

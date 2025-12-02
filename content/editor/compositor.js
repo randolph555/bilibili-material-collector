@@ -83,8 +83,8 @@ const CompositorPlayer = {
       setTimeout(resolve, 2000);
     });
     
-    // 设置正确的播放位置
-    const sourceTime = clip.sourceStart + (currentTime - clip.timelineStart);
+    // 设置正确的播放位置（处理循环播放）
+    const sourceTime = this.getSourceTime(clip, currentTime);
     this.mainVideo.currentTime = sourceTime;
     if (this.mainAudio) this.mainAudio.currentTime = sourceTime;
     
@@ -202,8 +202,8 @@ const CompositorPlayer = {
       // 确保加载正确的视频源
       await this.loadMainSource(mainClip.video.bvid);
       
-      // 计算源时间
-      const sourceTime = mainClip.sourceStart + (currentTime - mainClip.timelineStart);
+      // 计算源时间（处理循环播放）
+      const sourceTime = this.getSourceTime(mainClip, currentTime);
       
       this.mainVideo.currentTime = sourceTime;
       if (this.mainAudio) this.mainAudio.currentTime = sourceTime;
@@ -226,7 +226,7 @@ const CompositorPlayer = {
         // 有片段，显示画中画
         await this.loadPipSource(i, clip.video.bvid);
         if (pip) {
-          const sourceTime = clip.sourceStart + (currentTime - clip.timelineStart);
+          const sourceTime = this.getSourceTime(clip, currentTime);
           pip.video.currentTime = sourceTime;
           pip.container.style.display = 'block';
           this.applyTransform(i, clip.transform);
@@ -303,14 +303,11 @@ const CompositorPlayer = {
         await this.loadMainSource(mainClip.video.bvid);
       }
       
-      // 计算源视频时间：片段源起点 + (时间轴时间 - 片段时间轴起点)
-      const sourceTime = mainClip.sourceStart + (targetTime - mainClip.timelineStart);
+      // 计算源视频时间（处理循环播放）
+      const sourceTime = this.getSourceTime(mainClip, targetTime);
       
-      // 确保源时间在有效范围内
-      const clampedSourceTime = Math.max(mainClip.sourceStart, Math.min(mainClip.sourceEnd, sourceTime));
-      
-      this.mainVideo.currentTime = clampedSourceTime;
-      if (this.mainAudio) this.mainAudio.currentTime = clampedSourceTime;
+      this.mainVideo.currentTime = sourceTime;
+      if (this.mainAudio) this.mainAudio.currentTime = sourceTime;
       
       // 更新当前片段ID
       this.currentClipId = mainClip.id;
@@ -325,8 +322,8 @@ const CompositorPlayer = {
       if (clip) {
         await this.loadPipSource(i, clip.video.bvid);
         if (pip) {
-          const sourceTime = clip.sourceStart + (targetTime - clip.timelineStart);
-          pip.video.currentTime = Math.max(0, sourceTime);
+          const sourceTime = this.getSourceTime(clip, targetTime);
+          pip.video.currentTime = sourceTime;
           pip.container.style.display = 'block';
           this.applyTransform(i, clip.transform);
         }
@@ -400,9 +397,23 @@ const CompositorPlayer = {
           this.switchMainVideo(mainClip, currentTime);
         } else {
           // 同一个视频，只需要跳转时间
-          const sourceTime = mainClip.sourceStart + (currentTime - mainClip.timelineStart);
+          const sourceTime = this.getSourceTime(mainClip, currentTime);
           this.mainVideo.currentTime = sourceTime;
           if (this.mainAudio) this.mainAudio.currentTime = sourceTime;
+        }
+      } else {
+        // 同一个片段，检查是否需要循环（视频播放超出源范围）
+        const sourceDuration = mainClip.sourceEnd - mainClip.sourceStart;
+        const displayDuration = TrackManager.getClipDuration(mainClip);
+        
+        if (displayDuration > sourceDuration) {
+          // 需要循环播放
+          const videoTime = this.mainVideo.currentTime;
+          if (videoTime >= mainClip.sourceEnd - 0.05) {
+            // 视频快到源结束点，跳回源起点
+            this.mainVideo.currentTime = mainClip.sourceStart;
+            if (this.mainAudio) this.mainAudio.currentTime = mainClip.sourceStart;
+          }
         }
       }
       
@@ -487,7 +498,7 @@ const CompositorPlayer = {
     const pip = this.pipElements[trackIndex];
     if (!pip) return;
 
-    const sourceTime = clip.sourceStart + (timelineTime - clip.timelineStart);
+    const sourceTime = this.getSourceTime(clip, timelineTime);
     pip.video.currentTime = sourceTime;
     pip.container.style.display = 'block';
     pip.video.play().catch(() => {});
@@ -499,8 +510,7 @@ const CompositorPlayer = {
     if (!track || track.length === 0) return null;
 
     for (const clip of track) {
-      const clipDuration = clip.sourceEnd - clip.sourceStart;
-      const clipEnd = clip.timelineStart + clipDuration;
+      const clipEnd = TrackManager.getClipEnd(clip);
       
       // 在片段范围内 [start, end)
       if (timelineTime >= clip.timelineStart && timelineTime < clipEnd) {
@@ -509,6 +519,11 @@ const CompositorPlayer = {
     }
     
     return null;
+  },
+  
+  // 计算播放头位置对应的源视频时间（处理循环播放）
+  getSourceTime(clip, timelineTime) {
+    return TrackManager.getSourceTimeAtPlayhead(clip, timelineTime);
   },
   
   // 应用画中画位置/大小（只在首次显示时应用）
